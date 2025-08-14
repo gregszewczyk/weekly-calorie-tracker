@@ -6,7 +6,7 @@
 // Mock the required types and services for testing
 const API_CONFIG = {
   PERPLEXITY: {
-    API_KEY: process.env.PERPLEXITY_API_KEY || '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',
+    API_KEY: process.env.PERPLEXITY_API_KEY || '',
     BASE_URL: 'https://api.perplexity.ai',
     DEFAULT_MODEL: 'sonar',
     DEFAULT_TEMPERATURE: 0,

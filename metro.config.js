@@ -17,6 +17,7 @@ const nodeLibs = {
   tls: require.resolve('empty-module'),
   net: require.resolve('empty-module'),
   fs: require.resolve('empty-module'),
+  dgram: require.resolve('empty-module'),
 };
 
 const defaultConfig = getDefaultConfig(__dirname);
