@@ -227,6 +227,7 @@ Calculate specific weeks for each approach - they should be DIFFERENT. Conservat
   }
 }
 
+
 // Run the test
 testAIResponse().then(result => {
   if (result) {
