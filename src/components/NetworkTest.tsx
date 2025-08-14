@@ -12,13 +12,8 @@ const NetworkTest: React.FC = () => {
   const [lastResult, setLastResult] = useState<string>('');
 
   const getProxyUrl = () => {
-    if (Platform.OS === 'ios') {
-      return 'http://localhost:3006';
-    } else if (Platform.OS === 'android') {
-      return 'http://10.3.206.134:3006';
-    } else {
-      return 'http://localhost:3006';
-    }
+    // Use production Vercel deployment for all platforms
+    return 'https://garmin-proxy-server-lvsj1lvbg-gregs-projects-d9fe7e04.vercel.app';
   };
 
   const testConnection = async () => {

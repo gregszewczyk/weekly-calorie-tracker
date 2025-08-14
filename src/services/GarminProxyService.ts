@@ -71,16 +71,8 @@ export class GarminProxyService {
   }
 
   private getProxyUrl(): string {
-    if (Platform.OS === 'ios') {
-      // iOS Simulator can use localhost
-      return 'http://localhost:3006';
-    } else if (Platform.OS === 'android') {
-      // Use your computer's actual IP for Android (more reliable than 10.0.2.2)
-      return 'http://10.3.206.134:3006';
-    } else {
-      // Web or other platforms
-      return 'http://localhost:3006';
-    }
+    // Use production Vercel deployment for all platforms
+    return 'https://garmin-proxy-server-lvsj1lvbg-gregs-projects-d9fe7e04.vercel.app';
   }
 
   private async loadStoredSession(): Promise<void> {
