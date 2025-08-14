@@ -30,7 +30,8 @@ export interface PrivacySettings {
 }
 
 export interface FitnessGoals {
-  primaryGoal: 'weight-loss' | 'weight-gain' | 'maintenance' | 'performance';
+  primaryGoal: 'weight-loss' | 'weight-gain' | 'maintenance';
+  performanceMode: boolean;
   weeklyWeightChangeTarget: number; // kg per week (negative for loss)
   activityLevel: 'sedentary' | 'lightly-active' | 'moderately-active' | 'very-active' | 'extremely-active';
   trainingDaysPerWeek: number;

@@ -6,8 +6,9 @@ A mobile app that manages calorie intake from a weekly perspective, automaticall
 
 - **Weekly Calorie Banking**: Maintain weekly deficit/surplus goals with daily flexibility
 - **Smart Redistribution**: Automatically recalculate remaining daily allowances after each meal
-- **Smartwatch Integration**: Real-time activity tracking and calorie burn sync
+- **Smartwatch Integration**: Real-time activity tracking and calorie burn sync  
 - **Athletic Training Support**: Adjust targets based on training intensity for optimal performance
+- **🎯 Binge Recovery Calculator**: Mathematical approach to overeating recovery that prevents emotional spirals ✅ **NEW**
 
 ## 🏗️ Project Structure
 
@@ -87,6 +88,13 @@ The heart of the app is the `WeeklyCalorieRedistributor` class that:
 - Zustand store configured
 - Basic UI scaffolding
 
+**🎯 Binge Recovery Calculator Complete** ✅ **August 11, 2025**
+- Auto-detection system for overeating events (mild/moderate/severe)
+- Mathematical impact analysis ("adds 1.8 days to timeline" vs emotional language)
+- Multiple recovery strategies (3-day, 5-day, 7-day, maintenance week)
+- Complete UI components with positive psychological reframing
+- Integration with existing meal logging and state management
+
 **Next Development Steps:**
 1. Build meal logging interface
 2. Implement smartwatch integration
@@ -104,10 +112,39 @@ The heart of the app is the `WeeklyCalorieRedistributor` class that:
 - **Charts**: react-native-chart-kit
 - **Navigation**: React Navigation v6
 
+## 🎯 Using the Binge Recovery Calculator
+
+### Quick Integration
+Add to any screen for automatic recovery support:
+```tsx
+import RecoveryIntegration from '../components/RecoveryIntegration';
+
+const YourScreen = () => (
+  <View>
+    <RecoveryIntegration />  {/* Auto-shows recovery alerts */}
+  </View>
+);
+```
+
+### Demo & Testing
+```tsx
+import RecoveryDemoScreen from '../screens/RecoveryDemoScreen';
+// Complete testing environment with trigger buttons
+```
+
+### How It Works
+1. **Auto-Detection**: System monitors meal logging for overages
+2. **Mathematical Reframing**: Shows "adds 1.8 days to timeline" instead of emotional language
+3. **Recovery Options**: Multiple strategies from gentle 7-day to aggressive 3-day plans
+4. **Progress Tracking**: Active session monitoring with adjusted daily targets
+
+See [BINGE_RECOVERY_IMPLEMENTATION.md](BINGE_RECOVERY_IMPLEMENTATION.md) for complete documentation.
+
 ## 📖 Documentation
 
 - [Functional Requirements](../weekly-calorie-tracker-requirements.md)
-- User Stories & Acceptance Criteria
+- [Binge Recovery Calculator](BINGE_RECOVERY_IMPLEMENTATION.md) ✅ **NEW**
+- User Stories & Acceptance Criteria  
 - Technical Architecture
 - API Documentation (coming soon)
 

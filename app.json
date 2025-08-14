@@ -1,4 +1,40 @@
 {
-  "name": "WeeklyCalorieTracker",
-  "displayName": "Weekly Calorie Tracker"
+  "expo": {
+    "name": "Weekly Calorie Tracker",
+    "slug": "weekly-calorie-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gregszewczyk.weeklycalorietracker",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.anonymous.weeklycalorietracker"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5abcc9d2-a93b-430f-a33b-46066b7a8de5"
+      }
+    }
+  }
 }

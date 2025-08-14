@@ -1,0 +1,2829 @@
+import { GarminAuthManager } from './GarminAuthManager';
+import { 
+  GarminCredentials,
+  GarminAuthResponse,
+  GarminUserProfile,
+  GarminActivity,
+  GarminDailySummary,
+  GarminSessionData,
+  GarminServiceConfig,
+  GarminConnectionStatus,
+  GarminError,
+  GarminErrorType 
+} from '../types/GarminTypes';
+
+/**
+ * Main service for Garmin Connect integration using reverse-engineered APIs
+ * Handles authentication, session management, and data synchronization
+ */
+export class GarminConnectService {
+  private authManager: GarminAuthManager;
+  private config: GarminServiceConfig;
+  
+  // Garmin Connect endpoints - Updated for 2025
+private static readonly BASE_URL = 'https://connect.garmin.com';
+private static readonly SSO_URL = 'https://sso.garmin.com/sso/signin';
+private static readonly MODERN_PROXY = 'https://connect.garmin.com/modern/proxy';
+
+private static readonly ENDPOINTS = {
+  // Authentication
+  SSO_SIGNIN: 'https://sso.garmin.com/sso/signin',
+  LOGOUT: 'https://connect.garmin.com/modern/auth/logout',
+  LOGIN:  'https://sso.garmin.com/sso/signin',
+  
+  // API Endpoints - Updated with correct modern proxy paths
+  PROFILE: '/modern/proxy/userprofile-service/userprofile',
+  ACTIVITIES: '/modern/proxy/activitylist-service/activities/search/activities',
+  
+  // Multiple wellness endpoints to try (updated for 2025)
+  DAILY_SUMMARY: '/modern/proxy/usersummary-service/usersummary/daily',
+  WELLNESS_DATA: '/modern/proxy/wellness-service/wellness',
+  USER_SUMMARY: '/modern/proxy/usersummary-service/usersummary',
+  DAILY_WELLNESS: '/modern/proxy/wellness-service/wellness/dailySummaryChart',
+  
+  // Additional useful endpoints
+  ACTIVITY_DETAIL: '/modern/proxy/activity-service/activity',
+  USER_SETTINGS: '/modern/proxy/userprofile-service/userprofile/personal-information'
+};
+
+  private initialized: boolean = false;
+
+  constructor(config: Partial<GarminServiceConfig> = {}) {
+    this.authManager = new GarminAuthManager();
+    this.config = {
+      timeout: 30000,
+      retryAttempts: 3,
+      retryDelay: 1000,
+      ...config
+    };
+  }
+
+  /**
+   * Initialize the service and load stored session
+   * Must be called before using the service
+   */
+  async initialize(): Promise<void> {
+    if (!this.initialized) {
+      await this.authManager.initialize();
+      this.initialized = true;
+      console.log('🔧 [GarminConnect] Service initialized and session loaded');
+    }
+  }
+
+  /**
+   * Clean corrupted session data (for testing/debugging)
+   */
+  async cleanCorruptedSession(): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.authManager.cleanCorruptedSession();
+      return {
+        success: true,
+        message: 'Session cleaned successfully'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to clean session: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  /**
+   * Test login page access and CSRF token extraction
+   * Useful for diagnosing authentication issues without providing credentials
+   */
+  async testLoginPageAccess(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🔍 [GarminConnect] Testing login page access and token extraction...');
+    
+    try {
+      const loginUrls = [
+        GarminConnectService.ENDPOINTS.SSO_SIGNIN,
+        `${GarminConnectService.BASE_URL}/signin`,
+        `${GarminConnectService.BASE_URL}/en-US/signin`,
+      ];
+
+      for (const loginUrl of loginUrls) {
+        console.log(`🔄 [GarminConnect] Testing: ${loginUrl}`);
+        
+        try {
+          const response = await this.fetchWithTimeout(loginUrl, {
+            method: 'GET',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            }
+          });
+
+          if (response.ok) {
+            const html = await response.text();
+            const csrfToken = this.extractCSRFToken(html);
+            
+            return {
+              success: true,
+              message: `Login page accessible at ${loginUrl}. CSRF token ${csrfToken ? 'found' : 'NOT found'}.`,
+              details: {
+                url: loginUrl,
+                status: response.status,
+                csrfTokenFound: !!csrfToken,
+                pageLength: html.length,
+                hasForm: html.includes('<form'),
+                hasInputs: html.includes('<input'),
+                isReactApp: html.includes('data-reactroot') || html.includes('__REACT_DEVTOOLS_GLOBAL_HOOK__')
+              }
+            };
+          }
+        } catch (error) {
+          console.warn(`Failed to access ${loginUrl}:`, error);
+        }
+      }
+
+      return {
+        success: false,
+        message: 'Could not access any Garmin login pages',
+        details: { testedUrls: loginUrls }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Test failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Test connection to Garmin Connect without authentication
+   * Useful for diagnosing network or server issues
+   */
+  async testConnection(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🔍 [GarminConnect] Testing connection to Garmin Connect...');
+    
+    try {
+      // Test basic connectivity to Garmin Connect
+      const connectResponse = await this.fetchWithTimeout(
+        GarminConnectService.BASE_URL,
+        {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          }
+        }
+      );
+
+      const connectOk = connectResponse.ok;
+      console.log(`🌐 [GarminConnect] Connect.garmin.com: ${connectOk ? '✅ OK' : '❌ Failed'} (${connectResponse.status})`);
+
+      // Test signin endpoint (the actual login page we'll use)
+      const signinResponse = await this.fetchWithTimeout(
+        `${GarminConnectService.BASE_URL}/signin`,
+        {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          }
+        }
+      );
+
+      const signinOk = signinResponse.ok;
+      console.log(`🔐 [GarminConnect] Connect.garmin.com/signin: ${signinOk ? '✅ OK' : '❌ Failed'} (${signinResponse.status})`);
+
+      if (connectOk && signinOk) {
+        return {
+          success: true,
+          message: 'Connection to Garmin Connect is working properly'
+        };
+      } else {
+        return {
+          success: false,
+          message: `Connection issues detected: Connect=${connectResponse.status}, Signin=${signinResponse.status}`,
+          details: {
+            connectStatus: connectResponse.status,
+            signinStatus: signinResponse.status
+          }
+        };
+      }
+    } catch (error) {
+      console.error('❌ [GarminConnect] Connection test failed:', error);
+      return {
+        success: false,
+        message: `Connection test failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        details: error
+      };
+    }
+  }
+
+  /**
+   * Authenticate with Garmin Connect using username/password
+   * Returns authentication response with session details
+   */
+  async authenticate(credentials: GarminCredentials): Promise<GarminAuthResponse> {
+    console.log('🔐 [GarminConnect] Starting authentication process...');
+    
+    try {
+      // Step 1: Get initial SSO login page with exact parameters from working implementation
+      const ssoUrl = 'https://sso.garmin.com/sso/signin' +
+        '?service=https%3A%2F%2Fconnect.garmin.com%2Fmodern%2F' +
+        '&webhost=https%3A%2F%2Fconnect.garmin.com%2Fmodern%2F' +
+        '&source=https%3A%2F%2Fconnect.garmin.com%2Fsignin%2F' +
+        '&redirectAfterAccountLoginUrl=https%3A%2F%2Fconnect.garmin.com%2Fmodern%2F' +
+        '&clientId=GarminConnect' +
+        '&rememberMeShown=true';
+      
+      const loginUrls = [
+        ssoUrl, // Use working implementation's exact SSO URL
+        GarminConnectService.ENDPOINTS.SSO_SIGNIN, // Fallback to simple SSO
+        `${GarminConnectService.BASE_URL}/signin`, // Additional fallback
+      ];
+
+      const userAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+      ];
+
+      let loginPageResponse: Response | null = null;
+      let lastError: Error | null = null;
+      let workingLoginUrl: string = '';
+
+      // Try different login URLs and user agents
+      for (const loginUrl of loginUrls) {
+        console.log(`🔄 [GarminConnect] Trying login URL: ${loginUrl}`);
+        
+        for (let i = 0; i < userAgents.length; i++) {
+          const userAgent = userAgents[i];
+          console.log(`🔄 [GarminConnect] Attempting with User-Agent ${i + 1}/${userAgents.length}`);
+          
+          try {
+            loginPageResponse = await this.fetchWithTimeout(
+              loginUrl,
+              {
+                method: 'GET',
+                headers: {
+                  'User-Agent': userAgent,
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                  'Accept-Language': 'en-US,en;q=0.9',
+                  'Accept-Encoding': 'gzip, deflate, br',
+                  'DNT': '1',
+                  'Connection': 'keep-alive',
+                  'Upgrade-Insecure-Requests': '1',
+                  'Sec-Fetch-Dest': 'document',
+                  'Sec-Fetch-Mode': 'navigate',
+                  'Sec-Fetch-Site': 'none'
+                }
+              }
+            );
+
+            if (loginPageResponse.ok) {
+              console.log(`✅ [GarminConnect] Successfully fetched login page from ${loginUrl}`);
+              workingLoginUrl = loginUrl;
+              break;
+            } else {
+              console.warn(`⚠️ [GarminConnect] Login page fetch failed with status ${loginPageResponse.status}`);
+              lastError = new Error(`HTTP ${loginPageResponse.status}: ${loginPageResponse.statusText}`);
+            }
+          } catch (error) {
+            console.warn(`⚠️ [GarminConnect] Login page fetch error:`, error);
+            lastError = error instanceof Error ? error : new Error(String(error));
+            
+            // Add delay between attempts to avoid rate limiting
+            if (i < userAgents.length - 1) {
+              await new Promise<void>(resolve => setTimeout(resolve, 2000));
+            }
+          }
+        }
+        
+        // If we got a successful response, break out of the URL loop
+        if (loginPageResponse && loginPageResponse.ok) {
+          break;
+        }
+      }
+
+      if (!loginPageResponse || !loginPageResponse.ok) {
+        const errorMessage = lastError 
+          ? `Failed to load login page: ${lastError.message}`
+          : 'Failed to load login page with all user agents';
+        
+        console.error('❌ [GarminConnect] Login page fetch failed:', errorMessage);
+        
+        throw GarminAuthManager.createError(
+          GarminErrorType.SERVER_ERROR,
+          errorMessage
+        );
+      }
+
+      // Extract cookies and CSRF token
+      const cookies = this.authManager.extractCookiesFromResponse(loginPageResponse);
+      const loginPageHtml = await loginPageResponse.text();
+      
+      console.log('📄 [GarminConnect] Login page received, length:', loginPageHtml.length);
+      console.log('🍪 [GarminConnect] Cookies extracted:', cookies.length);
+      
+      const csrfToken = this.extractCSRFToken(loginPageHtml);
+
+      if (!csrfToken) {
+        console.warn('⚠️ [GarminConnect] Could not extract CSRF token - attempting without token');
+        
+        // Save the HTML for debugging if needed
+        if (loginPageHtml.length < 2000) {
+          console.log('📄 [GarminConnect] Full login page HTML:', loginPageHtml);
+        }
+        
+        // Try to proceed without CSRF token - some modern endpoints might work
+        console.log('🔄 [GarminConnect] Attempting authentication without CSRF token...');
+      } else {
+        console.log('✅ [GarminConnect] Retrieved CSRF token and session cookies');
+      }
+
+      // Step 2: Submit login credentials using the same user agent that worked
+      const successfulUserAgent = loginPageResponse.headers.get('user-agent') || userAgents[0];
+      const loginData: Record<string, string> = {
+        username: credentials.username,
+        password: credentials.password,
+        embed: 'false'
+      };
+
+      // Only include CSRF token if we found one
+      if (csrfToken) {
+        loginData._csrf = csrfToken;
+      }
+
+      // Submit login to SSO endpoint exactly like working implementation
+      const loginPostUrl = 'https://sso.garmin.com/sso/signin';
+      console.log(`🔐 [GarminConnect] Submitting login to SSO: ${loginPostUrl}`);
+      
+      const loginResponse = await this.fetchWithTimeout(
+        loginPostUrl,
+        {
+          method: 'POST',
+          headers: {
+            'User-Agent': successfulUserAgent,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Cookie': cookies.join('; '),
+            'Origin': 'https://sso.garmin.com',
+            'Referer': workingLoginUrl // Use the SSO URL we fetched from
+          },
+          body: new URLSearchParams(loginData).toString()
+        }
+      );
+
+      // Check for authentication errors
+      if (loginResponse.status === 401 || loginResponse.status === 403) {
+        throw GarminAuthManager.createError(
+          GarminErrorType.INVALID_CREDENTIALS,
+          'Invalid username or password'
+        );
+      }
+
+      if (!loginResponse.ok) {
+        const error = await GarminAuthManager.parseErrorFromResponse(loginResponse);
+        throw error;
+      }
+
+      // Step 3: Follow the complete redirect chain (like the working implementation)
+      let currentRedirectUrl = loginResponse.headers.get('location');
+      console.log('🔄 [GarminConnect] Starting redirect chain from:', currentRedirectUrl);
+
+      let finalSessionCookies = [
+        ...cookies,
+        ...this.authManager.extractCookiesFromResponse(loginResponse)
+      ];
+
+      // Follow redirect chain exactly like working implementation  
+      let redirectCount = 0;
+      const maxRedirects = 10; // Increase to ensure we follow complete chain
+
+      while (currentRedirectUrl && redirectCount < maxRedirects) {
+        console.log(`🔄 [GarminConnect] Following redirect ${redirectCount + 1}/${maxRedirects}: ${currentRedirectUrl}`);
+        
+        try {
+          const response = await this.fetchWithTimeout(currentRedirectUrl, {
+            method: 'GET',
+            headers: { 
+              'User-Agent': successfulUserAgent,
+              'Cookie': finalSessionCookies.join('; ')
+            }
+          });
+
+          console.log(`📊 [GarminConnect] Redirect ${redirectCount + 1} response: ${response.status}`);
+
+          // Update cookies from each redirect response (like working implementation)
+          if (response.headers.get('set-cookie')) {
+            const newCookies = this.authManager.extractCookiesFromResponse(response);
+            finalSessionCookies = this.mergeCookies(finalSessionCookies, newCookies);
+            console.log(`🍪 [GarminConnect] Merged ${newCookies.length} cookies from redirect ${redirectCount + 1}`);
+            
+            // Enhanced debugging - log all new cookies from this redirect
+            console.log(`📋 [GarminConnect] New cookies from redirect ${redirectCount + 1}:`);
+            newCookies.forEach((cookie, index) => {
+              const [cookieName, cookieValue] = cookie.split('=');
+              const valuePreview = cookieValue ? cookieValue.substring(0, 30) + (cookieValue.length > 30 ? '...' : '') : '';
+              console.log(`  ${index + 1}. ${cookieName}: ${valuePreview}`);
+              
+              // Check for target cookies and JWT-like patterns
+              if (cookieName === 'JWT_FGP' || cookieName === 'SESSIONID') {
+                console.log(`🎯 [GarminConnect] FOUND TARGET COOKIE: ${cookieName}!`);
+              } else if (cookieName.toLowerCase().includes('jwt') || cookieName.toLowerCase().includes('token')) {
+                console.log(`🔍 [GarminConnect] Potential token cookie: ${cookieName}`);
+              } else if (cookieValue && cookieValue.includes('.') && cookieValue.length > 50) {
+                console.log(`🔍 [GarminConnect] Potential JWT-like value in ${cookieName}`);
+              }
+            });
+          } else {
+            console.log(`📭 [GarminConnect] No new cookies in redirect ${redirectCount + 1}`);
+          }
+
+          currentRedirectUrl = response.headers.get('location');
+          redirectCount++;
+
+          if (!currentRedirectUrl) {
+            console.log('✅ [GarminConnect] Redirect chain completed successfully');
+            break;
+          }
+
+        } catch (error) {
+          console.warn(`⚠️ [GarminConnect] Redirect ${redirectCount + 1} failed:`, error);
+          break;
+        }
+      }
+
+      if (redirectCount >= maxRedirects) {
+        console.warn(`⚠️ [GarminConnect] Max redirects (${maxRedirects}) reached, stopping chain`);
+      }
+
+      console.log(`🎯 [GarminConnect] Final authentication cookies count: ${finalSessionCookies.length}`);
+
+      // Extract tokens from final cookies exactly like working implementation
+      const tokenMap = this.parseCookiesIntoMap(finalSessionCookies);
+      let extractedJwtFgp = tokenMap.JWT_FGP || '';
+      const extractedSessionId = tokenMap.SESSIONID || tokenMap.SESSION || '';
+      
+      if (extractedJwtFgp) {
+        console.log(`✅ JWT_FGP Token FOUND: ${extractedJwtFgp.substring(0, 20)}...`);
+      } else {
+        console.log('❌ JWT_FGP Token NOT FOUND - trying comprehensive extraction methods...');
+        
+        // Method 1: Try alternative token extraction (modern endpoint)
+        try {
+          const altTokens = await this.tryAlternativeTokenExtraction(finalSessionCookies);
+          if (altTokens.jwtFgp) {
+            finalSessionCookies.push(`JWT_FGP=${altTokens.jwtFgp}`);
+            extractedJwtFgp = altTokens.jwtFgp;
+            console.log(`🔄 Alternative JWT_FGP found: ${extractedJwtFgp.substring(0, 20)}...`);
+          }
+        } catch (error) {
+          console.warn('⚠️ [GarminConnect] Alternative token extraction failed:', error);
+        }
+
+        // Method 2: Try accessing user profile endpoint to trigger JWT_FGP generation
+        if (!extractedJwtFgp) {
+          try {
+            console.log('🔄 [GarminConnect] Trying user profile endpoint to trigger JWT_FGP...');
+            const profileTokens = await this.tryProfileEndpointForTokens(finalSessionCookies);
+            if (profileTokens.jwtFgp) {
+              finalSessionCookies.push(`JWT_FGP=${profileTokens.jwtFgp}`);
+              extractedJwtFgp = profileTokens.jwtFgp;
+              console.log(`🎯 Profile endpoint JWT_FGP found: ${extractedJwtFgp.substring(0, 20)}...`);
+            }
+          } catch (error) {
+            console.warn('⚠️ [GarminConnect] Profile endpoint token extraction failed:', error);
+          }
+        }
+
+        // Method 3: Check for JWT_FGP in different cookie name variations
+        if (!extractedJwtFgp) {
+          console.log('🔄 [GarminConnect] Checking for JWT_FGP variations in cookies...');
+          const jwtVariation = this.findJwtFgpVariations(finalSessionCookies);
+          if (jwtVariation) {
+            extractedJwtFgp = jwtVariation;
+            console.log(`🎯 JWT_FGP variation found: ${extractedJwtFgp.substring(0, 20)}...`);
+          }
+        }
+
+        // Method 4: As a last resort, try using SESSIONID as Bearer token if it's long enough
+        if (!extractedJwtFgp && extractedSessionId && extractedSessionId.length > 50) {
+          console.log('🔄 [GarminConnect] No JWT_FGP found, trying SESSIONID as Bearer token...');
+          extractedJwtFgp = extractedSessionId;
+          console.log(`🎯 Using SESSIONID as JWT_FGP: ${extractedJwtFgp.substring(0, 20)}...`);
+        }
+      }
+      
+      if (extractedSessionId) {
+        console.log(`✅ SESSIONID Token FOUND: ${extractedSessionId.substring(0, 20)}...`);
+      }
+
+      // Check if we have valid authentication
+      const isAuthenticated = this.verifyAuthentication(finalSessionCookies, loginResponse);
+      
+      if (!isAuthenticated) {
+        throw GarminAuthManager.createError(
+          GarminErrorType.AUTHENTICATION_FAILED,
+          'Authentication completed but session validation failed'
+        );
+      }
+
+      // Step 4: Create session data with authentication tokens (like working implementation)
+      const sessionData: GarminSessionData = {
+        cookies: finalSessionCookies,
+        csrfToken: csrfToken || '', // Provide empty string if null
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+        isAuthenticated: true,
+        oauthToken: extractedJwtFgp || undefined // Store JWT_FGP as OAuth token for API calls
+      };
+
+      console.log('🔍 [GarminConnect] Session data created with:', {
+        cookieCount: finalSessionCookies.length,
+        hasJwtFgp: !!extractedJwtFgp,
+        hasSessionId: !!extractedSessionId,
+        isAuthenticated: sessionData.isAuthenticated
+      });
+
+      await this.authManager.storeSession(sessionData);
+
+      // Step 6: Get user profile and extract user ID
+      let userProfile: GarminUserProfile;
+      let userId: string | undefined;
+      
+      try {
+        userProfile = await this.getUserProfile();
+        userId = userProfile.userId !== 'unknown' ? userProfile.userId : undefined;
+      } catch (error) {
+        console.warn('⚠️ [GarminConnect] Could not fetch user profile, trying to extract user ID from cookies/response');
+        
+        // Try multiple methods to extract user ID
+        userId = this.extractUserIdFromSession(finalSessionCookies) || 
+                 this.extractUserIdFromAuthResponse(loginResponse);
+        
+        userProfile = {
+          userId: userId || 'unknown',
+          displayName: credentials.username,
+          email: credentials.username
+        };
+      }
+
+      // Update session data with user ID
+      if (userId) {
+        sessionData.userId = userId;
+        sessionData.username = credentials.username;
+        console.log(`✅ [GarminConnect] User ID extracted: ${userId}`);
+      } else {
+        console.warn('⚠️ [GarminConnect] Could not extract user ID - trying alternative methods...');
+        
+        // Try to get user ID from a simple API call
+        try {
+          const alternativeUserId = await this.tryExtractUserIdFromAPI();
+          if (alternativeUserId) {
+            sessionData.userId = alternativeUserId;
+            sessionData.username = credentials.username;
+            userId = alternativeUserId;
+            console.log(`✅ [GarminConnect] User ID extracted from API: ${alternativeUserId}`);
+          }
+        } catch (error) {
+          console.warn('⚠️ [GarminConnect] Alternative user ID extraction failed:', error);
+        }
+        
+        if (!userId) {
+          console.warn('⚠️ [GarminConnect] All user ID extraction methods failed - some endpoints may not work');
+        }
+      }
+
+      const response: GarminAuthResponse = {
+        success: true,
+        sessionData,
+        userProfile
+      };
+
+      // Update connection status
+      await this.authManager.storeConnectionStatus({
+        isConnected: true,
+        connectedAt: new Date(),
+        userProfile
+      });
+
+      console.log('✅ [GarminConnect] Authentication successful');
+      return response;
+
+    } catch (error) {
+      console.error('❌ [GarminConnect] Authentication failed:', error);
+      
+      // Clear any partial session data
+      await this.authManager.clearSession();
+      
+      if (error instanceof Error && 'type' in error) {
+        throw error; // Re-throw GarminError
+      }
+      
+      throw GarminAuthManager.createError(
+        GarminErrorType.AUTHENTICATION_FAILED,
+        error instanceof Error ? error.message : 'Authentication failed'
+      );
+    }
+  }
+
+  /**
+   * Check if user is currently connected to Garmin
+   */
+  async isConnected(): Promise<boolean> {
+    try {
+      const session = await this.authManager.loadStoredSession();
+      if (!session || !this.authManager.isSessionValid()) {
+        return false;
+      }
+
+      // Verify session is still valid with a simple API call
+      try {
+        await this.getUserProfile();
+        return true;
+      } catch (error) {
+        console.log('🔄 [GarminConnect] Session validation failed, clearing session');
+        await this.authManager.clearSession();
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ [GarminConnect] Connection check failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get current connection status with details
+   */
+  async getConnectionStatus(): Promise<GarminConnectionStatus> {
+    const isConnected = await this.isConnected();
+    const storedStatus = await this.authManager.getConnectionStatus();
+    
+    return {
+      ...storedStatus,
+      isConnected
+    };
+  }
+
+  /**
+   * Get current session information for debugging/analysis
+   */
+  getSessionInfo(): { 
+    hasSession: boolean; 
+    userId?: string; 
+    username?: string; 
+    isAuthenticated: boolean; 
+    expiresAt?: Date; 
+    hasCsrfToken: boolean; 
+    cookieCount: number; 
+  } {
+    const session = this.authManager.getSession();
+    return {
+      hasSession: !!session,
+      userId: session?.userId,
+      username: session?.username,
+      isAuthenticated: session?.isAuthenticated || false,
+      expiresAt: session?.expiresAt,
+      hasCsrfToken: !!(session?.csrfToken),
+      cookieCount: session?.cookies?.length || 0
+    };
+  }
+
+  /**
+   * Get detailed session data for debugging (including cookies)
+   */
+  getDetailedSessionInfo(): {
+    hasSession: boolean;
+    userId?: string;
+    username?: string;
+    isAuthenticated: boolean;
+    csrfToken: string;
+    cookieCount: number;
+    cookies: Array<{ name: string; length: number; preview: string }>;
+  } {
+    const session = this.authManager.getSession();
+    return {
+      hasSession: !!session,
+      userId: session?.userId,
+      username: session?.username,
+      isAuthenticated: session?.isAuthenticated || false,
+      csrfToken: session?.csrfToken ? 'PRESENT' : 'MISSING',
+      cookieCount: session?.cookies?.length || 0,
+      cookies: session?.cookies?.map((cookie: string) => ({
+        name: cookie.split('=')[0],
+        length: cookie.length,
+        preview: cookie.substring(0, 50) + (cookie.length > 50 ? '...' : '')
+      })) || []
+    };
+  }
+
+  /**
+   * Disconnect from Garmin and clear all session data
+   */
+  async disconnect(): Promise<void> {
+    console.log('🔌 [GarminConnect] Disconnecting...');
+    
+    try {
+      // Try to logout from Garmin if we have a valid session
+      if (this.authManager.isSessionValid()) {
+        try {
+          await this.fetchWithTimeout(
+            `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.LOGOUT}`,
+            {
+              method: 'POST',
+              headers: this.authManager.getAuthHeaders()
+            }
+          );
+          console.log('✅ [GarminConnect] Logged out from Garmin');
+        } catch (error) {
+          console.warn('⚠️ [GarminConnect] Logout request failed, but continuing with local cleanup');
+        }
+      }
+    } finally {
+      // Always clear local session data
+      await this.authManager.clearSession();
+      console.log('✅ [GarminConnect] Disconnected and session cleared');
+    }
+  }
+
+  /**
+   * Get user profile information
+   */
+  async getUserProfile(): Promise<GarminUserProfile> {
+    await this.ensureAuthenticated();
+    
+    const response = await this.fetchWithTimeout(
+      `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.PROFILE}`,
+      {
+        method: 'GET',
+        headers: this.authManager.getAuthHeaders()
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`⚠️ [GarminConnect] Profile fetch failed with status ${response.status}. This is normal for unofficial APIs.`);
+      
+      // Return fallback user profile instead of throwing error
+      return {
+        userId: 'unknown',
+        displayName: 'Garmin User',
+        email: 'unknown@garmin.com'
+      };
+    }
+
+    const data = await response.json();
+    
+    console.log('📊 [GarminConnect] Profile response data:', JSON.stringify(data, null, 2));
+    
+    return {
+      userId: data.userId || data.id || 'unknown',
+      displayName: data.displayName || data.fullName || 'Garmin User',
+      email: data.email || data.emailAddress || 'unknown@garmin.com',
+      profileImageUrl: data.profileImageUrl,
+      locale: data.locale,
+      timezone: data.timeZone
+    };
+  }
+
+  /**
+   * Comprehensive analysis of all session cookies to find authentication tokens
+   */
+  async analyzeSessionTokens(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🔍 [GarminConnect] === COMPREHENSIVE TOKEN ANALYSIS ===');
+    
+    try {
+      await this.ensureAuthenticated();
+      
+      const sessionInfo = this.getSessionInfo();
+      const detailedInfo = this.getDetailedSessionInfo();
+      
+      console.log('📊 Session Overview:', {
+        hasSession: sessionInfo.hasSession,
+        cookieCount: sessionInfo.cookieCount,
+        isAuthenticated: sessionInfo.isAuthenticated
+      });
+      
+      if (detailedInfo.cookies.length === 0) {
+        return {
+          success: false,
+          message: 'No cookies found in session',
+          details: { sessionInfo, detailedInfo }
+        };
+      }
+      
+      console.log('\n🍪 DETAILED COOKIE ANALYSIS:');
+      const potentialTokens: any[] = [];
+      
+      detailedInfo.cookies.forEach((cookie, index) => {
+        console.log(`\nCookie ${index + 1}: ${cookie.name}`);
+        console.log(`  Length: ${cookie.length}`);
+        console.log(`  Preview: ${cookie.preview}`);
+        
+        // Analyze each cookie for potential tokens
+        const analysis = this.analyzeCookieForTokens(cookie.name, cookie.preview);
+        if (analysis.hasTokenPattern) {
+          console.log(`  🎯 POTENTIAL TOKEN FOUND:`, analysis);
+          potentialTokens.push({
+            cookieIndex: index + 1,
+            name: cookie.name,
+            ...analysis
+          });
+        }
+      });
+      
+      console.log('\n📋 TOKEN ANALYSIS SUMMARY:');
+      console.log(`  Total cookies analyzed: ${detailedInfo.cookies.length}`);
+      console.log(`  Potential tokens found: ${potentialTokens.length}`);
+      
+      if (potentialTokens.length > 0) {
+        console.log('\n🎯 POTENTIAL TOKENS:');
+        potentialTokens.forEach((token, index) => {
+          console.log(`  ${index + 1}. ${token.name} (${token.tokenType}): ${token.tokenValue?.substring(0, 30)}...`);
+        });
+      }
+      
+      // Test current authentication headers
+      console.log('\n🔧 CURRENT AUTH HEADERS:');
+      const authHeaders = this.authManager.getAuthHeaders();
+      Object.entries(authHeaders).forEach(([key, value]) => {
+        if (key === 'Authorization' || key === 'Cookie') {
+          console.log(`  ${key}: ${value.substring(0, 100)}${value.length > 100 ? '...' : ''}`);
+        } else {
+          console.log(`  ${key}: ${value}`);
+        }
+      });
+      
+      return {
+        success: true,
+        message: `Token analysis completed. Found ${potentialTokens.length} potential tokens.`,
+        details: {
+          sessionInfo,
+          cookieCount: detailedInfo.cookies.length,
+          potentialTokens,
+          authHeaders: Object.keys(authHeaders)
+        }
+      };
+      
+    } catch (error) {
+      console.error('❌ [GarminConnect] Token analysis failed:', error);
+      return {
+        success: false,
+        message: `Analysis failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Analyze a single cookie for potential authentication tokens
+   */
+  private analyzeCookieForTokens(cookieName: string, cookieValue: string): {
+    hasTokenPattern: boolean;
+    tokenType?: string;
+    tokenValue?: string;
+    confidence: number;
+  } {
+    const analysis = {
+      hasTokenPattern: false,
+      tokenType: undefined as string | undefined,
+      tokenValue: undefined as string | undefined,
+      confidence: 0
+    };
+
+    // JWT pattern (three base64 parts separated by dots)
+    const jwtPattern = /([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/;
+    const jwtMatch = cookieValue.match(jwtPattern);
+    if (jwtMatch) {
+      analysis.hasTokenPattern = true;
+      analysis.tokenType = 'JWT';
+      analysis.tokenValue = jwtMatch[1];
+      analysis.confidence = 0.9;
+      return analysis;
+    }
+
+    // OAuth/Bearer token pattern (long alphanumeric string)
+    const oauthPattern = /([A-Za-z0-9_-]{40,})/;
+    const oauthMatch = cookieValue.match(oauthPattern);
+    if (oauthMatch && !cookieValue.includes('=') && !cookieValue.includes('/')) {
+      analysis.hasTokenPattern = true;
+      analysis.tokenType = 'OAuth/Bearer';
+      analysis.tokenValue = oauthMatch[1];
+      analysis.confidence = 0.7;
+      return analysis;
+    }
+
+    // Base64 token pattern
+    const base64Pattern = /([A-Za-z0-9+/]{32,}={0,2})/;
+    const base64Match = cookieValue.match(base64Pattern);
+    if (base64Match) {
+      analysis.hasTokenPattern = true;
+      analysis.tokenType = 'Base64';
+      analysis.tokenValue = base64Match[1];
+      analysis.confidence = 0.6;
+      return analysis;
+    }
+
+    // Garmin-specific patterns
+    if (cookieName.includes('JWT') || cookieName.includes('TOKEN') || cookieName.includes('AUTH')) {
+      analysis.hasTokenPattern = true;
+      analysis.tokenType = 'Garmin-specific';
+      analysis.tokenValue = cookieValue;
+      analysis.confidence = 0.8;
+      return analysis;
+    }
+
+    return analysis;
+  }
+
+  /**
+   * Test if we can extract user ID from current session
+   */
+  async testUserIdExtraction(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🔍 [GarminConnect] Testing user ID extraction...');
+    
+    try {
+      await this.ensureAuthenticated();
+      
+      const session = this.authManager.getSession();
+      const cookies = session?.cookies || [];
+      
+      // Log current session info
+      console.log('📊 [GarminConnect] Current session:', {
+        hasSession: !!session,
+        userId: session?.userId,
+        username: session?.username,
+        cookieCount: cookies.length,
+        sessionValid: this.authManager.isSessionValid()
+      });
+      
+      // Try to extract user ID from cookies
+      const extractedUserId = this.extractUserIdFromSession(cookies);
+      
+      // Log all cookies for analysis
+      console.log('🍪 [GarminConnect] Session cookies analysis:');
+      cookies.forEach((cookie, index) => {
+        console.log(`  ${index + 1}. ${cookie.substring(0, 100)}${cookie.length > 100 ? '...' : ''}`);
+      });
+      
+      return {
+        success: !!(session?.userId || extractedUserId),
+        message: `User ID extraction: ${session?.userId || extractedUserId || 'Failed'}`,
+        details: {
+          storedUserId: session?.userId,
+          extractedUserId,
+          cookieCount: cookies.length,
+          hasUsername: !!session?.username
+        }
+      };
+      
+    } catch (error) {
+      console.error('❌ [GarminConnect] User ID extraction test failed:', error);
+      return {
+        success: false,
+        message: `User ID test failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Debug authentication headers and tokens
+   */
+  async debugAuthenticationHeaders(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🔍 [GarminConnect] === AUTHENTICATION HEADERS DEBUG ===');
+    
+    try {
+      await this.ensureAuthenticated();
+      
+      const sessionInfo = this.getSessionInfo();
+      const detailedInfo = this.getDetailedSessionInfo();
+      
+      console.log('📊 Session Info:', sessionInfo);
+      
+      // Get the actual auth headers that will be used
+      const authHeaders = this.authManager.getAuthHeaders();
+      console.log('🔧 Auth Headers:', authHeaders);
+      
+      // Get detailed token extraction info
+      const session = this.authManager.getSession();
+      if (session) {
+        console.log('\n🍪 All Session Cookies:');
+        session.cookies.forEach((cookie, index) => {
+          const cookieName = cookie.split('=')[0];
+          const cookieValue = cookie.split('=')[1]?.split(';')[0] || '';
+          console.log(`  ${index + 1}. ${cookieName}: ${cookieValue.substring(0, 30)}${cookieValue.length > 30 ? '...' : ''}`);
+          
+          // Check if this could be a token
+          if (cookieName.includes('JWT') || cookieName.includes('TOKEN') || cookieName.includes('AUTH')) {
+            console.log(`    🎯 POTENTIAL TOKEN: ${cookieName} = ${cookieValue.substring(0, 50)}...`);
+          }
+        });
+        
+        // Test if JWT_FGP exists and what it looks like
+        const jwtFgpCookie = session.cookies.find(c => c.startsWith('JWT_FGP='));
+        if (jwtFgpCookie) {
+          const jwtFgpValue = jwtFgpCookie.split('=')[1]?.split(';')[0];
+          console.log(`\n🎯 JWT_FGP Token Found: ${jwtFgpValue?.substring(0, 50)}...`);
+          console.log(`   Length: ${jwtFgpValue?.length}`);
+          console.log(`   Could be JWT: ${jwtFgpValue?.includes('.') ? 'YES (has dots)' : 'NO'}`);
+        } else {
+          console.log('\n❌ JWT_FGP Token NOT FOUND');
+        }
+      }
+      
+      return {
+        success: true,
+        message: 'Authentication headers debug completed',
+        details: {
+          sessionInfo,
+          authHeaders,
+          cookieCount: session?.cookies?.length || 0
+        }
+      };
+      
+    } catch (error) {
+      console.error('❌ [GarminConnect] Auth headers debug failed:', error);
+      return {
+        success: false,
+        message: `Debug failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Test API calls with proper Garmin authentication headers (like python-garminconnect)
+   */
+  async testProperGarminAuth(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🧪 [GarminConnect] Testing with proper Garmin authentication headers...');
+    
+    try {
+      await this.ensureAuthenticated();
+      
+      const session = this.authManager.getSession();
+      if (!session) {
+        throw new Error('No session available');
+      }
+
+      // Use AuthManager's processed token extraction instead of raw cookies
+      const authTokens = this.authManager.extractAuthenticationTokens();
+      const jwtFgp = authTokens.jwtFgp;
+      const sessionId = authTokens.sessionId;
+      
+      console.log(`🔍 [GarminConnect] JWT_FGP (processed): ${jwtFgp ? `${jwtFgp.substring(0, 20)}...` : 'NOT FOUND'}`);
+      console.log(`🔍 [GarminConnect] SESSIONID (processed): ${sessionId ? `${sessionId.substring(0, 20)}...` : 'NOT FOUND'}`);
+      console.log(`🔍 [GarminConnect] Bearer Token: ${authTokens.bearerToken ? `${authTokens.bearerToken.substring(0, 20)}...` : 'NOT FOUND'}`);
+      
+      if (!jwtFgp && !sessionId) {
+        return {
+          success: false,
+          message: 'Missing required tokens (need either JWT_FGP or SESSIONID)',
+          details: { hasJwtFgp: !!jwtFgp, hasSessionId: !!sessionId }
+        };
+      }
+
+      // Use JWT_FGP if available, otherwise use SESSIONID as fallback
+      const authToken = jwtFgp || sessionId;
+      console.log(`🎯 [GarminConnect] Using ${jwtFgp ? 'JWT_FGP' : 'SESSIONID'} for authentication: ${authToken?.substring(0, 20)}...`);
+
+      const results: any = {
+        tokens: { hasJwtFgp: !!jwtFgp, hasSessionId: !!sessionId },
+        endpointTests: {}
+      };
+
+      // Test endpoints with proper Garmin headers (like python-garminconnect uses)
+      const testEndpoints = [
+        {
+          name: 'Activities List',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITIES}?start=0&limit=5`,
+          method: 'GET'
+        },
+        {
+          name: 'User Profile',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.PROFILE}`,
+          method: 'GET'
+        },
+        {
+          name: 'Daily Summary',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.DAILY_SUMMARY}/${new Date().toISOString().split('T')[0]}`,
+          method: 'GET'
+        }
+      ];
+
+      for (const endpoint of testEndpoints) {
+        console.log(`\n🔍 [GarminConnect] Testing: ${endpoint.name}`);
+        
+        try {
+          // Headers based on python-garminconnect/garth pattern
+          const headers: Record<string, string> = {
+            'Authorization': `Bearer ${jwtFgp}`,
+            'Cookie': `JWT_FGP=${jwtFgp}; SESSIONID=${sessionId}`,
+            'DI-Backend': 'apiconnect.garmin.com',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://connect.garmin.com/modern/',
+            'Origin': 'https://connect.garmin.com'
+          };
+
+          console.log(`🔧 [GarminConnect] Headers for ${endpoint.name}:`, {
+            'Authorization': authToken ? `Bearer ${authToken.substring(0, 20)}...` : 'none',
+            'Cookie': headers['Cookie']?.substring(0, 80) + '...' || 'none',
+            'DI-Backend': headers['DI-Backend']
+          });
+
+          const response = await this.fetchWithTimeout(endpoint.url, {
+            method: endpoint.method,
+            headers
+          });
+
+          if (response.ok) {
+            try {
+              const data = await response.json();
+              results.endpointTests[endpoint.name] = {
+                success: true,
+                status: response.status,
+                dataType: typeof data,
+                hasData: data && Object.keys(data).length > 0,
+                dataKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 10) : [],
+                sampleData: data && typeof data === 'object' ? 
+                  (Array.isArray(data) ? data.slice(0, 2) : data) : data
+              };
+              console.log(`✅ [GarminConnect] ${endpoint.name} - SUCCESS: Got ${typeof data} response with ${Object.keys(data || {}).length} keys`);
+              
+              // Log actual data for debugging
+              if (data && Object.keys(data).length > 0) {
+                console.log(`📊 [GarminConnect] ${endpoint.name} data sample:`, JSON.stringify(data, null, 2).substring(0, 500));
+              }
+              
+            } catch (parseError) {
+              const text = await response.text();
+              results.endpointTests[endpoint.name] = {
+                success: false,
+                status: response.status,
+                error: 'JSON parse failed',
+                responsePreview: text.substring(0, 200)
+              };
+              console.log(`⚠️ [GarminConnect] ${endpoint.name} - Non-JSON response`);
+            }
+          } else {
+            results.endpointTests[endpoint.name] = {
+              success: false,
+              status: response.status,
+              statusText: response.statusText
+            };
+            console.log(`❌ [GarminConnect] ${endpoint.name} - Failed: ${response.status}`);
+          }
+        } catch (error) {
+          results.endpointTests[endpoint.name] = {
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          };
+          console.log(`❌ [GarminConnect] ${endpoint.name} - Error:`, error);
+        }
+      }
+
+      const successfulTests = Object.values(results.endpointTests).filter((test: any) => test.success).length;
+      const totalTests = Object.keys(results.endpointTests).length;
+
+      console.log(`\n📊 [GarminConnect] Proper Garmin auth test: ${successfulTests}/${totalTests} endpoints working`);
+
+      return {
+        success: successfulTests > 0,
+        message: `Proper Garmin auth: ${successfulTests}/${totalTests} endpoints working`,
+        details: results
+      };
+
+    } catch (error) {
+      console.error('❌ [GarminConnect] Proper Garmin auth test failed:', error);
+      return {
+        success: false,
+        message: `Test failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Test API calls with cookie-only authentication (no Bearer token)
+   */
+  async testCookieOnlyAuthentication(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🧪 [GarminConnect] Testing cookie-only authentication...');
+    
+    try {
+      await this.ensureAuthenticated();
+      
+      const sessionInfo = this.getSessionInfo();
+      const results: any = {
+        sessionInfo,
+        endpointTests: {}
+      };
+
+      // Get session cookies for manual header creation
+      const session = this.authManager.getSession();
+      const allCookies = session?.cookies?.join('; ') || '';
+      
+      console.log(`📊 [GarminConnect] Testing with ${sessionInfo.cookieCount} session cookies`);
+      
+      // Test endpoints with cookie-only headers (no Bearer token)
+      const testEndpoints = [
+        {
+          name: 'User Profile',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.PROFILE}`,
+          method: 'GET'
+        },
+        {
+          name: 'Activities List',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITIES}?start=0&limit=5`,
+          method: 'GET'
+        },
+        {
+          name: 'Daily Summary',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.DAILY_SUMMARY}/${new Date().toISOString().split('T')[0]}`,
+          method: 'GET'
+        }
+      ];
+
+      for (const endpoint of testEndpoints) {
+        console.log(`\n🔍 [GarminConnect] Testing: ${endpoint.name}`);
+        
+        try {
+          const headers: Record<string, string> = {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cookie': allCookies,
+            'DI-Backend': 'apiconnect.garmin.com',
+            'Referer': 'https://connect.garmin.com/modern/',
+            'Origin': 'https://connect.garmin.com'
+          };
+
+          const response = await this.fetchWithTimeout(endpoint.url, {
+            method: endpoint.method,
+            headers
+          });
+
+          if (response.ok) {
+            try {
+              const data = await response.json();
+              results.endpointTests[endpoint.name] = {
+                success: true,
+                status: response.status,
+                dataType: typeof data,
+                hasData: data && Object.keys(data).length > 0,
+                dataKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 10) : [],
+                sampleData: data && typeof data === 'object' ? 
+                  (Array.isArray(data) ? data.slice(0, 2) : data) : data
+              };
+              console.log(`✅ [GarminConnect] ${endpoint.name} - SUCCESS: Got ${typeof data} response`);
+            } catch (parseError) {
+              const text = await response.text();
+              results.endpointTests[endpoint.name] = {
+                success: false,
+                status: response.status,
+                error: 'JSON parse failed',
+                responsePreview: text.substring(0, 200)
+              };
+              console.log(`⚠️ [GarminConnect] ${endpoint.name} - Non-JSON response`);
+            }
+          } else {
+            results.endpointTests[endpoint.name] = {
+              success: false,
+              status: response.status,
+              statusText: response.statusText
+            };
+            console.log(`❌ [GarminConnect] ${endpoint.name} - Failed: ${response.status}`);
+          }
+        } catch (error) {
+          results.endpointTests[endpoint.name] = {
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          };
+          console.log(`❌ [GarminConnect] ${endpoint.name} - Error:`, error);
+        }
+      }
+
+      const successfulTests = Object.values(results.endpointTests).filter((test: any) => test.success).length;
+      const totalTests = Object.keys(results.endpointTests).length;
+
+      console.log(`\n📊 [GarminConnect] Cookie-only authentication test: ${successfulTests}/${totalTests} endpoints working`);
+
+      return {
+        success: successfulTests > 0,
+        message: `Cookie-only authentication: ${successfulTests}/${totalTests} endpoints working`,
+        details: results
+      };
+
+    } catch (error) {
+      console.error('❌ [GarminConnect] Cookie-only authentication test failed:', error);
+      return {
+        success: false,
+        message: `Test failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Enhanced comprehensive data test - focuses on actual data content
+   */
+  async testDataRetrievalEnhanced(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🧪 [GarminConnect] Enhanced data retrieval testing - focusing on actual data content...');
+    
+    try {
+      await this.ensureAuthenticated();
+      
+      const results: any = {
+        authentication: { success: true, message: 'Authenticated successfully' },
+        activities: null,
+        dailySummary: null,
+        activitiesDebug: null,
+        summaryDebug: null
+      };
+      
+      // Test activities endpoint debugging
+      console.log('\n📊 [GarminConnect] Testing activities endpoints comprehensively...');
+      try {
+        const activitiesDebug = await this.debugActivitiesEndpoints();
+        results.activitiesDebug = activitiesDebug;
+        console.log('✅ [GarminConnect] Activities debug completed');
+      } catch (error) {
+        results.activitiesDebug = { success: false, error: error instanceof Error ? error.message : String(error) };
+        console.log('❌ [GarminConnect] Activities debug failed:', error);
+      }
+      
+      // Test daily summary endpoint debugging
+      console.log('\n📊 [GarminConnect] Testing daily summary endpoints comprehensively...');
+      try {
+        const summaryDebug = await this.debugDailySummaryEndpoints();
+        results.summaryDebug = summaryDebug;
+        console.log('✅ [GarminConnect] Daily summary debug completed');
+      } catch (error) {
+        results.summaryDebug = { success: false, error: error instanceof Error ? error.message : String(error) };
+        console.log('❌ [GarminConnect] Daily summary debug failed:', error);
+      }
+      
+      // Test basic activities retrieval
+      console.log('\n📊 [GarminConnect] Testing basic activities retrieval...');
+      try {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        
+        const activities = await this.getActivities(startDate, endDate, 10);
+        results.activities = { 
+          success: true, 
+          count: activities.length, 
+          activities: activities.map(a => ({
+            id: a.activityId,
+            name: a.activityName,
+            type: a.activityType,
+            calories: a.calories,
+            duration: a.duration,
+            startTime: a.startTime
+          }))
+        };
+        console.log(`✅ [GarminConnect] Found ${activities.length} activities`);
+        
+        // Log calorie totals
+        const totalCalories = activities.reduce((sum, activity) => sum + (activity.calories || 0), 0);
+        console.log(`🔥 [GarminConnect] Total calories from activities: ${totalCalories} kcal`);
+        
+      } catch (error) {
+        results.activities = { success: false, error: error instanceof Error ? error.message : String(error) };
+        console.log('❌ [GarminConnect] Activities test failed:', error);
+      }
+      
+      // Test basic daily summary
+      console.log('\n📊 [GarminConnect] Testing basic daily summary...');
+      try {
+        const today = new Date();
+        const summary = await this.getDailySummary(today);
+        results.dailySummary = { success: true, data: summary };
+        console.log('✅ [GarminConnect] Daily summary retrieved');
+        console.log(`👟 [GarminConnect] Steps: ${summary.steps}, Calories: ${summary.calories}, Active: ${summary.activeCalories}`);
+      } catch (error) {
+        results.dailySummary = { success: false, error: error instanceof Error ? error.message : String(error) };
+        console.log('❌ [GarminConnect] Daily summary test failed:', error);
+      }
+      
+      // Summary analysis
+      const hasRealActivityData = results.activities?.success && results.activities.count > 0 && 
+        results.activities.activities.some((a: any) => a.calories > 0);
+      const hasRealSummaryData = results.dailySummary?.success && 
+        (results.dailySummary.data.steps > 0 || results.dailySummary.data.calories > 0);
+      
+      console.log('\n📈 [GarminConnect] DATA ANALYSIS:');
+      console.log(`  Activities with calories: ${hasRealActivityData ? '✅ YES' : '❌ NO'}`);
+      console.log(`  Daily summary with data: ${hasRealSummaryData ? '✅ YES' : '❌ NO'}`);
+      
+      return {
+        success: hasRealActivityData || hasRealSummaryData,
+        message: `Enhanced test completed. Real data found: ${hasRealActivityData || hasRealSummaryData ? 'YES' : 'NO'}`,
+        details: results
+      };
+      
+    } catch (error) {
+      console.error('❌ [GarminConnect] Enhanced data retrieval test failed:', error);
+      return {
+        success: false,
+        message: `Test failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Test the updated API endpoints to verify they work with our authentication
+   */
+  async testDataRetrieval(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🧪 [GarminConnect] Testing data retrieval with updated endpoints...');
+    
+    try {
+      await this.ensureAuthenticated();
+      
+      const testResults: any = {
+        profile: null,
+        activities: null,
+        dailySummary: null
+      };
+      
+      // Test 1: Profile endpoint
+      console.log('📊 [GarminConnect] Testing profile endpoint...');
+      try {
+        const profile = await this.getUserProfile();
+        testResults.profile = { success: true, data: profile };
+        console.log('✅ [GarminConnect] Profile test passed');
+      } catch (error) {
+        testResults.profile = { success: false, error: error instanceof Error ? error.message : String(error) };
+        console.log('❌ [GarminConnect] Profile test failed:', error);
+      }
+      
+      // Test 2: Activities endpoint (last 7 days)
+      console.log('📊 [GarminConnect] Testing activities endpoint...');
+      try {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        
+        const activities = await this.getActivities(startDate, endDate, 5);
+        testResults.activities = { success: true, count: activities.length, sample: activities[0] };
+        console.log(`✅ [GarminConnect] Activities test passed - found ${activities.length} activities`);
+      } catch (error) {
+        testResults.activities = { success: false, error: error instanceof Error ? error.message : String(error) };
+        console.log('❌ [GarminConnect] Activities test failed:', error);
+      }
+      
+      // Test 3: Daily summary endpoint (today)
+      console.log('📊 [GarminConnect] Testing daily summary endpoint...');
+      try {
+        const today = new Date();
+        const summary = await this.getDailySummary(today);
+        testResults.dailySummary = { success: true, data: summary };
+        console.log('✅ [GarminConnect] Daily summary test passed');
+      } catch (error) {
+        testResults.dailySummary = { success: false, error: error instanceof Error ? error.message : String(error) };
+        console.log('❌ [GarminConnect] Daily summary test failed:', error);
+      }
+      
+      const successCount = Object.values(testResults).filter((result: any) => result.success).length;
+      const totalTests = Object.keys(testResults).length;
+      
+      return {
+        success: successCount > 0, // At least one test passed
+        message: `Data retrieval test completed: ${successCount}/${totalTests} endpoints working`,
+        details: testResults
+      };
+      
+    } catch (error) {
+      console.error('❌ [GarminConnect] Data retrieval test failed:', error);
+      return {
+        success: false,
+        message: `Test failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Debug method to test different activities endpoint variations
+   */
+  async debugActivitiesEndpoints(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🧪 [GarminConnect] Testing different activities endpoint variations...');
+    
+    try {
+      await this.ensureAuthenticated();
+      
+      const today = new Date();
+      const lastWeek = new Date();
+      lastWeek.setDate(today.getDate() - 7);
+      
+      const testEndpoints = [
+        // Original endpoint
+        {
+          name: 'Original Activities',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITIES}`,
+          params: new URLSearchParams({
+            startDate: lastWeek.toISOString().split('T')[0],
+            endDate: today.toISOString().split('T')[0],
+            limit: '10'
+          })
+        },
+        // Try without date filters
+        {
+          name: 'Activities - No Date Filter',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITIES}`,
+          params: new URLSearchParams({
+            start: '0',
+            limit: '10'
+          })
+        },
+        // Try with different parameter names
+        {
+          name: 'Activities - Alternative Params',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITIES}`,
+          params: new URLSearchParams({
+            start: '0',
+            limit: '10',
+            search: '',
+            sortOrder: 'desc'
+          })
+        },
+        // Try the exact format you mentioned
+        {
+          name: 'Activities - User Specified Format',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITIES}`,
+          params: new URLSearchParams({
+            start: '0',
+            limit: '10'
+          })
+        },
+        // Try with different date parameter names
+        {
+          name: 'Activities - fromDate/untilDate',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITIES}`,
+          params: new URLSearchParams({
+            fromDate: lastWeek.toISOString().split('T')[0],
+            untilDate: today.toISOString().split('T')[0],
+            start: '0',
+            limit: '10'
+          })
+        }
+      ];
+      
+      const results: any = {};
+      
+      for (const endpoint of testEndpoints) {
+        console.log(`🔍 [GarminConnect] Testing: ${endpoint.name}`);
+        console.log(`🔗 [GarminConnect] URL: ${endpoint.url}?${endpoint.params}`);
+        
+        try {
+          const response = await this.fetchWithTimeout(
+            `${endpoint.url}?${endpoint.params}`,
+            {
+              method: 'GET',
+              headers: this.authManager.getAuthHeaders()
+            }
+          );
+          
+          if (response.ok) {
+            const data = await response.json();
+            results[endpoint.name] = {
+              success: true,
+              status: response.status,
+              dataType: typeof data,
+              isArray: Array.isArray(data),
+              keys: data && typeof data === 'object' ? Object.keys(data) : [],
+              sampleData: data && typeof data === 'object' ? 
+                (Array.isArray(data) ? data.slice(0, 2) : data) : data
+            };
+            console.log(`✅ [GarminConnect] ${endpoint.name} - Success`);
+          } else {
+            results[endpoint.name] = {
+              success: false,
+              status: response.status,
+              statusText: response.statusText
+            };
+            console.log(`❌ [GarminConnect] ${endpoint.name} - Failed: ${response.status}`);
+          }
+        } catch (error) {
+          results[endpoint.name] = {
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          };
+          console.log(`❌ [GarminConnect] ${endpoint.name} - Error:`, error);
+        }
+        
+        // Add delay between requests
+        await new Promise(resolve => setTimeout(() => resolve(undefined), 1000));
+      }
+      
+      return {
+        success: Object.values(results).some((result: any) => result.success),
+        message: 'Activities endpoint testing completed',
+        details: results
+      };
+      
+    } catch (error) {
+      console.error('❌ [GarminConnect] Activities endpoint testing failed:', error);
+      return {
+        success: false,
+        message: `Test failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Get detailed activity data including calories
+   * This method tries to fetch individual activity details if the list doesn't have calories
+   */
+  async getActivityDetails(activityId: string): Promise<any> {
+    await this.ensureAuthenticated();
+    
+    const response = await this.fetchWithTimeout(
+      `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITY_DETAIL}/${activityId}`,
+      {
+        method: 'GET',
+        headers: this.authManager.getAuthHeaders()
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`⚠️ [GarminConnect] Activity detail fetch failed for ${activityId}: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    console.log(`📊 [GarminConnect] Activity detail for ${activityId}:`, JSON.stringify(data, null, 2));
+    return data;
+  }
+
+  /**
+   * Get activities within date range
+   */
+  async getActivities(startDate: Date, endDate: Date, limit = 20): Promise<GarminActivity[]> {
+    await this.ensureAuthenticated();
+    
+    const session = this.authManager.getSession();
+    
+    // Try multiple activity endpoint formats
+    const endpointsToTry = [
+      // Format 1: Standard with date range
+      {
+        url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITIES}`,
+        params: new URLSearchParams({
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+          limit: limit.toString()
+        })
+      },
+      // Format 2: Just start and limit (most recent activities)
+      {
+        url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.ACTIVITIES}`,
+        params: new URLSearchParams({
+          start: '0',
+          limit: limit.toString()
+        })
+      },
+      // Format 3: User-specific if we have user ID
+      ...(session?.userId ? [{
+        url: `${GarminConnectService.BASE_URL}/modern/proxy/activitylist-service/activities/search/activities`,
+        params: new URLSearchParams({
+          start: '0',
+          limit: limit.toString(),
+          ownerId: session.userId
+        })
+      }] : [])
+    ];
+
+    console.log(`🔍 [GarminConnect] Session info:`, {
+      hasSession: !!session,
+      userId: session?.userId,
+      username: session?.username,
+      isAuthenticated: session?.isAuthenticated
+    });
+    console.log(`🔍 [GarminConnect] Trying ${endpointsToTry.length} activities endpoint formats${session?.userId ? ` with user ID ${session.userId}` : ' without user ID'}`);
+
+    let lastError: any = null;
+    for (let i = 0; i < endpointsToTry.length; i++) {
+      const { url, params } = endpointsToTry[i];
+      const fullUrl = `${url}?${params}`;
+      console.log(`🔄 [GarminConnect] Trying activities endpoint ${i + 1}/${endpointsToTry.length}: ${fullUrl}`);
+      
+      try {
+        const response = await this.fetchWithTimeout(
+          fullUrl,
+          {
+            method: 'GET',
+            headers: this.authManager.getAuthHeaders()
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`✅ [GarminConnect] Activities endpoint ${i + 1} worked!`);
+          
+          // Process the response
+          const activities = this.processActivitiesData(data);
+          if (activities.length > 0) {
+            console.log(`🎯 [GarminConnect] Found ${activities.length} activities using endpoint ${i + 1}`);
+            return activities;
+          } else {
+            console.warn(`⚠️ [GarminConnect] Endpoint ${i + 1} returned empty activities, trying next...`);
+          }
+        } else {
+          console.warn(`⚠️ [GarminConnect] Activities endpoint ${i + 1} failed with status ${response.status}`);
+          lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ [GarminConnect] Activities endpoint ${i + 1} threw error:`, error);
+        lastError = error;
+      }
+    }
+
+    // If all endpoints failed, throw the last error
+    if (lastError) {
+      const error = await GarminAuthManager.parseErrorFromResponse(lastError);
+      throw error;
+    }
+
+    // Return empty array if no data found
+    console.warn('⚠️ [GarminConnect] All activities endpoints failed, returning empty array');
+    return [];
+  }
+
+  /**
+   * Process activities data from any endpoint format
+   */
+  private processActivitiesData(data: any): GarminActivity[] {
+    console.log('📊 [GarminConnect] Activities response data:', JSON.stringify(data, null, 2));
+    console.log('🔍 [GarminConnect] Activities response keys:', Object.keys(data || {}));
+    console.log('🔍 [GarminConnect] Response type:', typeof data);
+    console.log('🔍 [GarminConnect] Is array:', Array.isArray(data));
+    
+    // Enhanced data validation and transformation
+    let activitiesArray: any[] = [];
+    
+    if (Array.isArray(data)) {
+      // Data is directly an array
+      activitiesArray = data;
+    } else if (data && Array.isArray(data.activities)) {
+      // Data has activities property that's an array
+      activitiesArray = data.activities;
+    } else if (data && Array.isArray(data.activityList)) {
+      // Alternative activities property name
+      activitiesArray = data.activityList;
+    } else if (data && Array.isArray(data.data)) {
+      // Data wrapped in data property
+      activitiesArray = data.data;
+    } else if (data && typeof data === 'object') {
+      // Object with unknown structure - let's explore it
+      console.log('🔍 [GarminConnect] Exploring unknown object structure:');
+      console.log('  Keys:', Object.keys(data));
+      console.log('  Object values sample:', Object.keys(data).slice(0, 5).map(key => ({
+        key,
+        type: typeof data[key],
+        isArray: Array.isArray(data[key]),
+        length: Array.isArray(data[key]) ? data[key].length : undefined,
+        sample: Array.isArray(data[key]) ? data[key][0] : data[key]
+      })));
+      
+      // Try additional common property names
+      const possibleArrayKeys = [
+        'activityList', 'activities', 'data', 'items', 'results', 'list',
+        'workouts', 'sessions', 'entries', 'records', 'content'
+      ];
+      
+      for (const key of possibleArrayKeys) {
+        if (data[key] && Array.isArray(data[key])) {
+          console.log(`🎯 [GarminConnect] Found activities array in property: ${key}`);
+          activitiesArray = data[key];
+          break;
+        }
+      }
+      
+      // If still no array found, check if any values are arrays
+      if (activitiesArray.length === 0) {
+        const arrayValues = Object.entries(data).filter(([key, value]) => Array.isArray(value));
+        if (arrayValues.length > 0) {
+          console.log(`🔍 [GarminConnect] Found ${arrayValues.length} array properties:`, arrayValues.map(([key, value]) => `${key}(${(value as any[]).length})`));
+          // Use the first array we find
+          activitiesArray = arrayValues[0][1] as any[];
+          console.log(`🎯 [GarminConnect] Using array from property: ${arrayValues[0][0]}`);
+        }
+      }
+      
+      if (activitiesArray.length === 0) {
+        console.warn('⚠️ [GarminConnect] No activity arrays found in response object');
+        return [];
+      }
+    } else {
+      console.warn('⚠️ [GarminConnect] Unexpected activities response format:', typeof data, data);
+      // Return empty array instead of crashing
+      return [];
+    }
+    
+    console.log(`📊 [GarminConnect] Found ${activitiesArray.length} activities to transform`);
+    
+    // Transform Garmin data to our format with error handling
+    return activitiesArray.map((activity: any, index: number) => {
+      try {
+        // Debug log each activity's fields
+        console.log(`🔍 [GarminConnect] Activity ${index + 1} raw data:`, {
+          keys: Object.keys(activity),
+          calories: activity.calories,
+          activeKilocalories: activity.activeKilocalories,
+          totalCalories: activity.totalCalories,
+          kilocalories: activity.kilocalories,
+          energyInKcal: activity.energyInKcal,
+          activityName: activity.activityName || activity.name,
+          activityType: activity.activityType || activity.type
+        });
+
+        const transformedActivity = {
+          activityId: activity.activityId?.toString() || activity.id?.toString() || `unknown-${index}`,
+          activityName: activity.activityName || activity.name || 'Unknown Activity',
+          activityType: activity.activityType || activity.type || 'UNKNOWN',
+          startTime: new Date(activity.startTimeLocal || activity.startTime || Date.now()),
+          duration: activity.duration || activity.movingDuration || 0,
+          distance: activity.distance || 0,
+          calories: activity.calories || activity.activeKilocalories || activity.totalCalories || activity.kilocalories || activity.energyInKcal || 0,
+          averageHeartRate: activity.averageHR || activity.avgHeartRate,
+          maxHeartRate: activity.maxHR || activity.maxHeartRate,
+          elevationGain: activity.elevationGain || 0,
+          averageSpeed: activity.averageSpeed || 0,
+          maxSpeed: activity.maxSpeed || 0
+        };
+
+        console.log(`✅ [GarminConnect] Activity ${index + 1} transformed:`, {
+          name: transformedActivity.activityName,
+          calories: transformedActivity.calories,
+          duration: transformedActivity.duration
+        });
+
+        return transformedActivity;
+      } catch (error) {
+        console.error(`❌ [GarminConnect] Error transforming activity ${index}:`, error, activity);
+        return {
+          activityId: `error-${index}`,
+          activityName: 'Error Loading Activity',
+          activityType: 'UNKNOWN',
+          startTime: new Date(),
+          duration: 0,
+          distance: 0,
+          calories: 0,
+          averageHeartRate: undefined,
+          maxHeartRate: undefined,
+          elevationGain: 0,
+          averageSpeed: 0,
+          maxSpeed: 0
+        };
+      }
+    });
+  }
+
+  /**
+   * Debug method to test different daily summary endpoint variations
+   */
+  async debugDailySummaryEndpoints(): Promise<{ success: boolean; message: string; details?: any }> {
+    console.log('🧪 [GarminConnect] Testing different daily summary endpoint variations...');
+    
+    try {
+      await this.ensureAuthenticated();
+      
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+      
+      const dateStr = today.toISOString().split('T')[0];
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      
+      const testEndpoints = [
+        {
+          name: 'Daily Summary - Today',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.DAILY_SUMMARY}/${dateStr}`
+        },
+        {
+          name: 'Daily Summary - Yesterday',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.DAILY_SUMMARY}/${yesterdayStr}`
+        },
+        {
+          name: 'Wellness Data - Today',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.WELLNESS_DATA}/${dateStr}`
+        },
+        {
+          name: 'User Summary - Today',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.USER_SUMMARY}/${dateStr}`
+        },
+        {
+          name: 'Daily Wellness - Today',
+          url: `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.DAILY_WELLNESS}/${dateStr}`
+        }
+      ];
+      
+      const results: any = {};
+      
+      for (const endpoint of testEndpoints) {
+        console.log(`🔍 [GarminConnect] Testing: ${endpoint.name}`);
+        console.log(`🔗 [GarminConnect] URL: ${endpoint.url}`);
+        
+        try {
+          const response = await this.fetchWithTimeout(
+            endpoint.url,
+            {
+              method: 'GET',
+              headers: this.authManager.getAuthHeaders()
+            }
+          );
+          
+          if (response.ok) {
+            const data = await response.json();
+            results[endpoint.name] = {
+              success: true,
+              status: response.status,
+              dataType: typeof data,
+              keys: data && typeof data === 'object' ? Object.keys(data) : [],
+              hasCalories: data && (data.totalKilocalories || data.calories || data.activeKilocalories),
+              hasSteps: data && (data.totalSteps || data.steps),
+              sampleData: data
+            };
+            console.log(`✅ [GarminConnect] ${endpoint.name} - Success`);
+            if (data && (data.totalKilocalories || data.calories)) {
+              console.log(`🔥 [GarminConnect] Found calories data in ${endpoint.name}!`);
+            }
+          } else {
+            results[endpoint.name] = {
+              success: false,
+              status: response.status,
+              statusText: response.statusText
+            };
+            console.log(`❌ [GarminConnect] ${endpoint.name} - Failed: ${response.status}`);
+          }
+        } catch (error) {
+          results[endpoint.name] = {
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          };
+          console.log(`❌ [GarminConnect] ${endpoint.name} - Error:`, error);
+        }
+        
+        // Add delay between requests
+        await new Promise(resolve => setTimeout(() => resolve(undefined), 1000));
+      }
+      
+      return {
+        success: Object.values(results).some((result: any) => result.success),
+        message: 'Daily summary endpoint testing completed',
+        details: results
+      };
+      
+    } catch (error) {
+      console.error('❌ [GarminConnect] Daily summary endpoint testing failed:', error);
+      return {
+        success: false,
+        message: `Test failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { error }
+      };
+    }
+  }
+
+  /**
+   * Get daily summary for a specific date
+   */
+  async getDailySummary(date: Date): Promise<GarminDailySummary> {
+    await this.ensureAuthenticated();
+    
+    const session = this.authManager.getSession();
+    const dateStr = date.toISOString().split('T')[0];
+    
+    // Try multiple endpoint formats with and without user ID
+    const endpointsToTry = [
+      // Format 1: With user ID in path (most likely correct)
+      session?.userId ? `${GarminConnectService.BASE_URL}/modern/proxy/usersummary-service/usersummary/daily/${session.userId}?calendarDate=${dateStr}` : null,
+      
+      // Format 2: Alternative user ID format  
+      session?.userId ? `${GarminConnectService.BASE_URL}/modern/proxy/usersummary-service/usersummary/daily/${session.userId}/${dateStr}` : null,
+      
+      // Format 3: Query parameter format
+      `${GarminConnectService.BASE_URL}/modern/proxy/usersummary-service/usersummary/daily?calendarDate=${dateStr}`,
+      
+      // Format 4: Original format (fallback)
+      `${GarminConnectService.BASE_URL}${GarminConnectService.ENDPOINTS.DAILY_SUMMARY}/${dateStr}`,
+    ].filter(Boolean);
+
+    console.log(`🔍 [GarminConnect] Trying ${endpointsToTry.length} daily summary endpoint formats for ${dateStr}${session?.userId ? ` with user ID ${session.userId}` : ' without user ID'}`);
+
+    let lastError: any = null;
+    for (let i = 0; i < endpointsToTry.length; i++) {
+      const endpoint = endpointsToTry[i];
+      console.log(`🔄 [GarminConnect] Trying endpoint ${i + 1}/${endpointsToTry.length}: ${endpoint}`);
+      
+      try {
+        const response = await this.fetchWithTimeout(
+          endpoint!,
+          {
+            method: 'GET',
+            headers: this.authManager.getAuthHeaders()
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`✅ [GarminConnect] Daily summary endpoint ${i + 1} worked!`);
+          console.log('📊 [GarminConnect] Daily summary response data:', JSON.stringify(data, null, 2));
+          
+          // If we got data, process it and return
+          if (data && Object.keys(data).length > 0) {
+            return this.processDailySummaryData(data, date);
+          } else {
+            console.warn(`⚠️ [GarminConnect] Endpoint ${i + 1} returned empty data, trying next...`);
+          }
+        } else {
+          console.warn(`⚠️ [GarminConnect] Endpoint ${i + 1} failed with status ${response.status}`);
+          lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ [GarminConnect] Endpoint ${i + 1} threw error:`, error);
+        lastError = error;
+      }
+    }
+
+    // If all endpoints failed, throw the last error
+    if (lastError) {
+      const error = await GarminAuthManager.parseErrorFromResponse(lastError);
+      throw error;
+    }
+
+    // Return empty summary if no data found
+    console.warn('⚠️ [GarminConnect] All daily summary endpoints failed, returning empty data');
+    return this.processDailySummaryData({}, date);
+  }
+
+  /**
+   * Process daily summary data from any endpoint format
+   */
+  private processDailySummaryData(data: any, date: Date): GarminDailySummary {
+    // Ensure we have valid data with fallbacks
+    const safeData = data || {};
+    
+    // Log detailed field analysis for debugging
+    console.log('🔍 [GarminConnect] Field Analysis:');
+    console.log('  totalKilocalories:', safeData.totalKilocalories);
+    console.log('  calories:', safeData.calories);
+    console.log('  activeKilocalories:', safeData.activeKilocalories);
+    console.log('  bmrKilocalories:', safeData.bmrKilocalories);
+    console.log('  restingKilocalories:', safeData.restingKilocalories);
+    console.log('  totalSteps:', safeData.totalSteps);
+    console.log('  steps:', safeData.steps);
+    console.log('  Available keys:', Object.keys(safeData));
+    
+    return {
+      date,
+      steps: safeData.totalSteps || safeData.steps || 0,
+      calories: safeData.totalKilocalories || safeData.calories || 0,
+      activeCalories: safeData.activeKilocalories || 0,
+      distance: safeData.totalDistanceMeters || safeData.distance || 0,
+      floorsClimbed: safeData.floorsUp || safeData.floorsClimbed || 0,
+      activeMinutes: safeData.vigorousMinutes || safeData.activeMinutes || 0,
+      sleepDuration: safeData.sleepDurationInSeconds || 0,
+      restingHeartRate: safeData.restingHeartRate || 0,
+      maxHeartRate: safeData.maxHeartRate || 0,
+      averageStress: safeData.averageStressLevel || 0
+    };
+  }
+
+  /**
+   * Get sleep data for a specific date
+   */
+  async getSleepData(date: Date): Promise<import('../types/GarminTypes').GarminSleepData> {
+    await this.ensureAuthenticated();
+    
+    const session = this.authManager.getSession();
+    if (!session?.userId) {
+      throw GarminAuthManager.createError(
+        GarminErrorType.NOT_AUTHENTICATED,
+        'User ID not available in session'
+      );
+    }
+
+    const dateStr = date.toISOString().split('T')[0];
+    const response = await this.fetchWithTimeout(
+      `${GarminConnectService.BASE_URL}/wellness-service/wellness/dailySleepData/${session.userId}?date=${dateStr}`,
+      {
+        method: 'GET',
+        headers: this.authManager.getAuthHeaders()
+      }
+    );
+
+    if (!response.ok) {
+      const error = await GarminAuthManager.parseErrorFromResponse(response);
+      throw error;
+    }
+
+    const data = await response.json();
+    
+    return data;
+  }
+
+  /**
+   * Get body composition data for a specific date
+   */
+  async getBodyCompositionData(date: Date): Promise<import('../types/GarminTypes').GarminBodyComposition[]> {
+    await this.ensureAuthenticated();
+    
+    const session = this.authManager.getSession();
+    if (!session?.userId) {
+      throw GarminAuthManager.createError(
+        GarminErrorType.NOT_AUTHENTICATED,
+        'User ID not available in session'
+      );
+    }
+
+    const startDate = date.toISOString().split('T')[0];
+    const endDate = startDate; // Single day for now
+    
+    const response = await this.fetchWithTimeout(
+      `${GarminConnectService.BASE_URL}/weight-service/weight/dateRange?startDate=${startDate}&endDate=${endDate}`,
+      {
+        method: 'GET',
+        headers: this.authManager.getAuthHeaders()
+      }
+    );
+
+    if (!response.ok) {
+      const error = await GarminAuthManager.parseErrorFromResponse(response);
+      throw error;
+    }
+
+    const data = await response.json();
+    
+    return data;
+  }
+
+  // Private helper methods
+
+  private async ensureAuthenticated(): Promise<void> {
+    // Ensure the service is initialized and session is loaded
+    await this.initialize();
+    
+    if (!this.authManager.isSessionValid()) {
+      throw GarminAuthManager.createError(
+        GarminErrorType.NOT_AUTHENTICATED,
+        'Not authenticated. Please call authenticate() first.'
+      );
+    }
+  }
+
+  private async fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+
+    try {
+      console.log(`🌐 [GarminConnect] Fetching: ${url}`);
+      console.log(`📋 [GarminConnect] Headers:`, JSON.stringify(options.headers, null, 2));
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+
+      console.log(`📊 [GarminConnect] Response: ${response.status} ${response.statusText}`);
+      // Log response headers (TypeScript-compatible way)
+      const headerEntries: string[] = [];
+      response.headers.forEach((value, key) => {
+        headerEntries.push(`${key}: ${value}`);
+      });
+      console.log(`📋 [GarminConnect] Response Headers:`, headerEntries.join(', '));
+
+      // Log additional details for server errors
+      if (response.status >= 500) {
+        try {
+          const responseText = await response.clone().text();
+          console.error(`❌ [GarminConnect] Server Error Response Body:`, responseText.substring(0, 500));
+        } catch (e) {
+          console.error(`❌ [GarminConnect] Could not read error response body:`, e);
+        }
+      }
+
+      // Update session cookies if present
+      await this.authManager.updateSessionCookies(response);
+      
+      return response;
+    } catch (error) {
+      console.error(`❌ [GarminConnect] Fetch error for ${url}:`, error);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw GarminAuthManager.createError(
+          GarminErrorType.NETWORK_ERROR,
+          'Request timed out'
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private extractCSRFToken(html: string): string | null {
+    console.log('🔍 [GarminConnect] Extracting CSRF token from login page...');
+    
+    // Try multiple patterns to find CSRF token - Updated for 2025 Garmin patterns
+    const patterns = [
+      // Standard form input with name="_csrf" or "csrf"
+      /name="_csrf"\s+value="([^"]+)"/i,
+      /name=['"]_csrf['"][^>]*value=['"]([^'"]+)['"]/i,
+      /name="csrf"\s+value="([^"]+)"/i,
+      /name=['"]csrf['"][^>]*value=['"]([^'"]+)['"]/i,
+      
+      // Meta tag with csrf-token
+      /<meta\s+name=['"]csrf-token['"][^>]*content=['"]([^'"]+)['"]/i,
+      /<meta\s+content=['"]([^'"]+)['"][^>]*name=['"]csrf-token['"]/i,
+      /<meta\s+name=['"]_csrf['"][^>]*content=['"]([^'"]+)['"]/i,
+      
+      // JavaScript variable assignments (common in modern Garmin)
+      /window\.__CSRF_TOKEN__\s*=\s*['"]([^'"]+)['"]/i,
+      /csrfToken\s*[:=]\s*['"]([^'"]+)['"]/i,
+      /_csrf\s*[:=]\s*['"]([^'"]+)['"]/i,
+      /csrf_token\s*[:=]\s*['"]([^'"]+)['"]/i,
+      /'csrfToken'\s*:\s*['"]([^'"]+)['"]/i,
+      /"csrfToken"\s*:\s*"([^"]+)"/i,
+      
+      // Data attributes and React patterns
+      /data-csrf=['"]([^'"]+)['"]/i,
+      /data-csrf-token=['"]([^'"]+)['"]/i,
+      /data-reactroot[^>]*data-csrf=['"]([^'"]+)['"]/i,
+      
+      // Hidden input variations
+      /<input[^>]*type=['"]hidden['"][^>]*name=['"]csrf['"][^>]*value=['"]([^'"]+)['"]/i,
+      /<input[^>]*type=['"]hidden['"][^>]*name=['"]_csrf['"][^>]*value=['"]([^'"]+)['"]/i,
+      /<input[^>]*type=['"]hidden['"][^>]*name=['"]_token['"][^>]*value=['"]([^'"]+)['"]/i,
+      
+      // Form data patterns
+      /<form[^>]*>[^<]*<input[^>]*name=['"]_csrf['"][^>]*value=['"]([^'"]+)['"]/i,
+      
+      // Token in script tags
+      /<script[^>]*>[\s\S]*?token['"]?\s*[:=]\s*['"]([a-zA-Z0-9+/=]{20,})['"]/i,
+    ];
+    
+    for (let i = 0; i < patterns.length; i++) {
+      const pattern = patterns[i];
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        console.log(`✅ [GarminConnect] Found CSRF token using pattern ${i + 1}: ${match[1].substring(0, 20)}...`);
+        return match[1];
+      }
+    }
+    
+    // Enhanced debugging to understand current page structure
+    console.warn('⚠️ [GarminConnect] No CSRF token found. Analyzing page structure...');
+    
+    // Log page info
+    console.log('📊 [GarminConnect] Page length:', html.length);
+    console.log('📄 [GarminConnect] Page preview (first 1000 chars):', html.substring(0, 1000));
+    
+    // Look for any hidden inputs for debugging
+    const hiddenInputs = html.match(/<input[^>]*type=['"]hidden['"][^>]*>/gi);
+    if (hiddenInputs && hiddenInputs.length > 0) {
+      console.log('🔍 [GarminConnect] Found hidden inputs:', hiddenInputs.slice(0, 5));
+    }
+    
+    // Look for any form elements
+    const forms = html.match(/<form[^>]*>/gi);
+    if (forms && forms.length > 0) {
+      console.log('📋 [GarminConnect] Found forms:', forms.slice(0, 3));
+    }
+    
+    // Look for any input elements (visible or hidden)
+    const allInputs = html.match(/<input[^>]*>/gi);
+    if (allInputs && allInputs.length > 0) {
+      console.log('⌨️ [GarminConnect] Found input elements:', allInputs.slice(0, 10));
+    }
+    
+    // Look for script tags that might contain tokens
+    const scriptTags = html.match(/<script[^>]*>[\s\S]*?<\/script>/gi);
+    if (scriptTags && scriptTags.length > 0) {
+      console.log('📜 [GarminConnect] Found', scriptTags.length, 'script tags');
+      // Check first few scripts for potential tokens
+      scriptTags.slice(0, 3).forEach((script, index) => {
+        if (script.includes('token') || script.includes('csrf') || script.includes('Token')) {
+          console.log(`🎯 [GarminConnect] Script ${index + 1} contains token-related content:`, script.substring(0, 500));
+        }
+      });
+    }
+    
+    // Look for potential SPA/React patterns
+    if (html.includes('data-reactroot') || html.includes('__REACT_DEVTOOLS_GLOBAL_HOOK__')) {
+      console.log('⚛️ [GarminConnect] Detected React application - tokens might be in JavaScript');
+    }
+    
+    // Look for any meta tags
+    const metaTags = html.match(/<meta[^>]*>/gi);
+    if (metaTags && metaTags.length > 0) {
+      console.log('🏷️ [GarminConnect] Found meta tags:', metaTags.slice(0, 10));
+    }
+    
+    return null;
+  }
+
+  private verifyAuthentication(cookies: string[], response: Response): boolean {
+    // Check for session cookies that indicate successful authentication
+    const sessionCookieNames = ['GARMIN-SSO', 'SESSIONID', 'JWT_FMR'];
+    const hasSessionCookie = sessionCookieNames.some(name =>
+      cookies.some(cookie => cookie.startsWith(`${name}=`))
+    );
+
+    // Check for redirect to success page
+    const isRedirectToConnect = response.url?.includes('connect.garmin.com') || 
+                                response.headers.get('location')?.includes('connect.garmin.com');
+
+    return hasSessionCookie || isRedirectToConnect || response.status === 200;
+  }
+
+  /**
+   * Try to extract user ID from session cookies or response data
+   */
+  private extractUserIdFromSession(cookies: string[]): string | undefined {
+    console.log('🔍 [GarminConnect] Attempting to extract user ID from session cookies...');
+    
+    // Look for user ID in cookies
+    for (const cookie of cookies) {
+      console.log(`🍪 [GarminConnect] Analyzing cookie: ${cookie.substring(0, 100)}...`);
+      
+      // Enhanced patterns for user ID in Garmin cookies
+      const userIdPatterns = [
+        // Standard Garmin SSO patterns
+        /GARMIN-SSO.*[&?]user_id=(\d+)/i,
+        /GARMIN-SSO.*[&?]userId=(\d+)/i,
+        /GARMIN-SSO.*[&?]uid=(\d+)/i,
+        
+        // JWT or encoded patterns
+        /JWT_FMR.*[&?]user_id=(\d+)/i,
+        /JWT_FMR.*[&?]userId=(\d+)/i,
+        
+        // Direct patterns in cookie values
+        /userId[_-]?(\d+)/i,
+        /user[_-]?id[_-]?(\d+)/i,
+        /user[_-]?(\d+)/i,
+        /uid[_-]?(\d+)/i,
+        
+        // Base64 or URL encoded patterns
+        /user%3[Dd](\d+)/i, // user=123 URL encoded
+        /userId%3[Dd](\d+)/i, // userId=123 URL encoded
+        
+        // Session ID that might contain user ID
+        /SESSIONID.*[&?]user[_-]?(\d+)/i,
+        /session.*user[_-]?id[_-]?(\d+)/i,
+        
+        // Numeric patterns that could be user IDs (10+ digits)
+        /=(\d{10,})/g, // Any long numeric value
+      ];
+
+      for (const pattern of userIdPatterns) {
+        const match = cookie.match(pattern);
+        if (match && match[1]) {
+          console.log(`🎯 [GarminConnect] Found potential user ID in cookie: ${match[1]} (pattern: ${pattern.source})`);
+          
+          // Validate the user ID (should be a reasonable length)
+          const userId = match[1];
+          if (userId.length >= 6 && userId.length <= 20) {
+            console.log(`✅ [GarminConnect] User ID validated: ${userId}`);
+            return userId;
+          } else {
+            console.log(`⚠️ [GarminConnect] User ID rejected (invalid length): ${userId}`);
+          }
+        }
+      }
+    }
+
+    console.warn('⚠️ [GarminConnect] Could not extract user ID from session cookies');
+    return undefined;
+  }
+
+  /**
+   * Try to extract user ID from URL responses during authentication
+   */
+  private extractUserIdFromAuthResponse(response: Response): string | undefined {
+    console.log('🔍 [GarminConnect] Attempting to extract user ID from auth response...');
+    
+    // Check for redirect URLs that might contain user ID
+    const location = response.headers.get('location');
+    if (location) {
+      console.log(`🔗 [GarminConnect] Checking redirect URL: ${location}`);
+      
+      const userIdPatterns = [
+        /[&?]user_id=(\d+)/i,
+        /[&?]userId=(\d+)/i,
+        /[&?]uid=(\d+)/i,
+        /\/user\/(\d+)/i,
+        /\/users\/(\d+)/i
+      ];
+      
+      for (const pattern of userIdPatterns) {
+        const match = location.match(pattern);
+        if (match && match[1]) {
+          console.log(`🎯 [GarminConnect] Found user ID in redirect URL: ${match[1]}`);
+          return match[1];
+        }
+      }
+    }
+    
+    // Check the response URL itself
+    if (response.url) {
+      console.log(`🔗 [GarminConnect] Checking response URL: ${response.url}`);
+      
+      const userIdPatterns = [
+        /[&?]user_id=(\d+)/i,
+        /[&?]userId=(\d+)/i,
+        /\/user\/(\d+)/i,
+        /\/users\/(\d+)/i
+      ];
+      
+      for (const pattern of userIdPatterns) {
+        const match = response.url.match(pattern);
+        if (match && match[1]) {
+          console.log(`🎯 [GarminConnect] Found user ID in response URL: ${match[1]}`);
+          return match[1];
+        }
+      }
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Try to extract user ID by making API calls that might reveal it
+   */
+  private async tryExtractUserIdFromAPI(): Promise<string | undefined> {
+    console.log('🔍 [GarminConnect] Trying to extract user ID from API responses...');
+    
+    // Try various API endpoints that might contain user ID in response
+    const testEndpoints = [
+      '/modern/proxy/userprofile-service/userprofile',
+      '/modern/proxy/userprofile-service/userprofile/personal-information',
+      '/modern/proxy/web-gateway/auth/profile',
+      '/web-gateway/auth/profile'
+    ];
+    
+    for (const endpoint of testEndpoints) {
+      try {
+        console.log(`🔗 [GarminConnect] Testing endpoint for user ID: ${endpoint}`);
+        
+        const response = await this.fetchWithTimeout(
+          `${GarminConnectService.BASE_URL}${endpoint}`,
+          {
+            method: 'GET',
+            headers: this.authManager.getAuthHeaders()
+          }
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`📊 [GarminConnect] API response from ${endpoint}:`, JSON.stringify(data, null, 2));
+          
+          // Look for user ID in the response
+          const userIdFields = ['userId', 'id', 'user_id', 'userProfileId', 'profileId'];
+          for (const field of userIdFields) {
+            if (data[field] && typeof data[field] === 'string' && /^\d+$/.test(data[field])) {
+              console.log(`🎯 [GarminConnect] Found user ID in API response: ${data[field]} (field: ${field})`);
+              return data[field];
+            }
+          }
+          
+          // Look for user ID in nested objects
+          if (data.profile && typeof data.profile === 'object') {
+            for (const field of userIdFields) {
+              if (data.profile[field] && typeof data.profile[field] === 'string' && /^\d+$/.test(data.profile[field])) {
+                console.log(`🎯 [GarminConnect] Found user ID in nested profile: ${data.profile[field]} (field: profile.${field})`);
+                return data.profile[field];
+              }
+            }
+          }
+        } else {
+          console.log(`❌ [GarminConnect] Endpoint ${endpoint} failed: ${response.status}`);
+        }
+      } catch (error) {
+        console.log(`❌ [GarminConnect] Endpoint ${endpoint} error:`, error);
+      }
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Extract OAuth access token from authentication response
+   * This is needed for Bearer token authentication on API calls
+   * Updated to follow the modern Garmin auth flow pattern
+   */
+  private async extractOAuthToken(cookies: string[], loginResponse: Response): Promise<string | undefined> {
+    console.log('🔍 [GarminConnect] Attempting to extract OAuth access token from completed auth flow...');
+
+    // Method 1: Look for OAuth token in cookies (priority patterns based on modern implementations)
+    for (const cookie of cookies) {
+      const oauthPatterns = [
+        // Modern Garmin patterns (based on python-garminconnect/garth)
+        /JWT_FGP=([^;]+)/i,           // Primary Garmin JWT token
+        /JWT_FMR=([^;]+)/i,           // Alternative Garmin JWT
+        /oauth_access_token=([^;]+)/i, // Standard OAuth
+        /access_token=([^;]+)/i,      // Generic access token
+        /auth_token=([^;]+)/i,        // Auth token
+        /bearer_token=([^;]+)/i,      // Bearer token
+        /GARMIN_TOKEN=([^;]+)/i       // Garmin-specific token
+      ];
+
+      for (const pattern of oauthPatterns) {
+        const match = cookie.match(pattern);
+        if (match && match[1]) {
+          const token = match[1];
+          // Validate token (should be substantial length)
+          if (token.length >= 20 && !token.includes(' ')) {
+            console.log(`🎯 [GarminConnect] Found OAuth token in cookie (${pattern.source}): ${token.substring(0, 20)}...`);
+            return token;
+          }
+        }
+      }
+    }
+
+    // Method 2: Try to get access token via authenticated request
+    // After complete auth flow, we might be able to call a token endpoint
+    try {
+      console.log('🔄 [GarminConnect] Attempting to get access token via authenticated request...');
+      
+      const tokenEndpoints = [
+        '/modern/auth/token',
+        '/web-gateway/auth/token',
+        '/connect/auth/token'
+      ];
+
+      for (const endpoint of tokenEndpoints) {
+        try {
+          const response = await this.fetchWithTimeout(
+            `${GarminConnectService.BASE_URL}${endpoint}`,
+            {
+              method: 'GET',
+              headers: {
+                'Cookie': cookies.join('; '),
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            }
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.access_token || data.token || data.auth_token) {
+              const token = data.access_token || data.token || data.auth_token;
+              console.log(`✅ [GarminConnect] OAuth token retrieved from ${endpoint}: ${token.substring(0, 20)}...`);
+              return token;
+            }
+          }
+        } catch (error) {
+          console.log(`⚠️ [GarminConnect] Token endpoint ${endpoint} failed:`, error);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ [GarminConnect] Authenticated token request failed:', error);
+    }
+
+    // Method 3: Check if JWT_FGP can be used as Bearer token (common in modern implementations)
+    const jwtFgpCookie = cookies.find(cookie => cookie.startsWith('JWT_FGP='));
+    if (jwtFgpCookie) {
+      const jwtFgpValue = jwtFgpCookie.split('=')[1]?.split(';')[0];
+      if (jwtFgpValue && jwtFgpValue.length > 20) {
+        console.log(`🔄 [GarminConnect] Using JWT_FGP as fallback OAuth token: ${jwtFgpValue.substring(0, 20)}...`);
+        return jwtFgpValue;
+      }
+    }
+
+    console.warn('⚠️ [GarminConnect] Could not extract OAuth access token from completed auth flow');
+    return undefined;
+  }
+
+  /**
+   * Parse cookie array into key-value pairs (like the working implementation)
+   */
+  private parseCookieArray(cookieArray: string[]): Record<string, string> {
+    const cookies: Record<string, string> = {};
+    
+    cookieArray.forEach(cookieString => {
+      // Split on ';' to handle multiple cookies in one string
+      cookieString.split(';').forEach(cookie => {
+        const [key, value] = cookie.trim().split('=');
+        if (key && value) {
+          cookies[key] = value;
+        }
+      });
+    });
+    
+    console.log(`🔍 [GarminConnect] Parsed ${Object.keys(cookies).length} unique cookies from ${cookieArray.length} cookie strings`);
+    return cookies;
+  }
+
+  /**
+   * Merge cookies arrays, replacing duplicates like working implementation
+   */
+  private mergeCookies(existingCookies: string[], newCookies: string[]): string[] {
+    const cookieMap = new Map<string, string>();
+    
+    // Add existing cookies
+    for (const cookie of existingCookies) {
+      const [name, value] = cookie.split('=');
+      if (name && value) {
+        cookieMap.set(name, cookie);
+      }
+    }
+    
+    // Add/update with new cookies
+    for (const cookie of newCookies) {
+      const [name, value] = cookie.split('=');
+      if (name && value) {
+        cookieMap.set(name, cookie);
+      }
+    }
+
+    return Array.from(cookieMap.values());
+  }
+
+  /**
+   * Parse cookies into map like working implementation
+   */
+  private parseCookiesIntoMap(cookies: string[]): Record<string, string> {
+    const cookieMap: Record<string, string> = {};
+    
+    cookies.forEach(cookie => {
+      const [key, value] = cookie.trim().split('=');
+      if (key && value) {
+        cookieMap[key] = value;
+      }
+    });
+
+    return cookieMap;
+  }
+
+  /**
+   * Try alternative token extraction methods
+   */
+  private async tryAlternativeTokenExtraction(cookies: string[]): Promise<{
+    jwtFgp?: string;
+    sessionId?: string;
+  }> {
+    console.log('🔄 [GarminConnect] Trying alternative token extraction...');
+    
+    // Try accessing the modern proxy endpoint to trigger token generation
+    try {
+      const modernUrl = 'https://connect.garmin.com/modern/';
+      const response = await this.fetchWithTimeout(modernUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+          'Cookie': cookies.join('; ')
+        }
+      });
+
+      if (response.headers.get('set-cookie')) {
+        const newCookies = this.authManager.extractCookiesFromResponse(response);
+        const tokenMap = this.parseCookiesIntoMap(newCookies);
+        
+        return {
+          jwtFgp: tokenMap.JWT_FGP,
+          sessionId: tokenMap.SESSIONID || tokenMap.SESSION
+        };
+      }
+    } catch (error) {
+      console.warn('⚠️ [GarminConnect] Alternative extraction failed:', error);
+    }
+
+    return {};
+  }
+
+  /**
+   * Extract user ID from cookies for session storage
+   */
+  private extractUserIdFromCookies(cookies: string[]): string | undefined {
+    for (const cookie of cookies) {
+      // Look for user ID patterns in cookie values
+      if (cookie.includes('userId=') || cookie.includes('user_id=')) {
+        const match = cookie.match(/user_?[Ii]d=([^;]+)/);
+        if (match && match[1]) {
+          return match[1];
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Try accessing profile endpoint to trigger JWT_FGP generation
+   */
+  private async tryProfileEndpointForTokens(cookies: string[]): Promise<{
+    jwtFgp?: string;
+    sessionId?: string;
+  }> {
+    console.log('🔄 [GarminConnect] Trying profile endpoint to trigger JWT_FGP generation...');
+    
+    const profileEndpoints = [
+      'https://connect.garmin.com/modern/proxy/userprofile-service/userprofile/personal-information',
+      'https://connect.garmin.com/modern/currentuser-service/user/current',
+      'https://connect.garmin.com/modern/',
+      'https://connect.garmin.com/modern/proxy/userprofile-service/userprofile'
+    ];
+
+    for (const endpoint of profileEndpoints) {
+      try {
+        console.log(`🔍 [GarminConnect] Trying endpoint: ${endpoint}`);
+        const response = await this.fetchWithTimeout(endpoint, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+            'Cookie': cookies.join('; '),
+            'Accept': 'application/json'
+          }
+        });
+
+        if (response.headers.get('set-cookie')) {
+          const newCookies = this.authManager.extractCookiesFromResponse(response);
+          const tokenMap = this.parseCookiesIntoMap(newCookies);
+          
+          if (tokenMap.JWT_FGP) {
+            console.log(`🎯 [GarminConnect] JWT_FGP found from endpoint: ${endpoint}`);
+            return {
+              jwtFgp: tokenMap.JWT_FGP,
+              sessionId: tokenMap.SESSIONID || tokenMap.SESSION
+            };
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ [GarminConnect] Profile endpoint ${endpoint} failed:`, error);
+      }
+    }
+
+    return {};
+  }
+
+  /**
+   * Look for JWT_FGP in different cookie name variations
+   */
+  private findJwtFgpVariations(cookies: string[]): string | undefined {
+    console.log('🔍 [GarminConnect] Searching for JWT_FGP variations in cookies...');
+    
+    const jwtPatterns = [
+      /JWT_FGP=([^;]+)/i,
+      /jwt_fgp=([^;]+)/i,
+      /JWT-FGP=([^;]+)/i,
+      /jwt-fgp=([^;]+)/i,
+      /JWTFGP=([^;]+)/i,
+      /jwtfgp=([^;]+)/i,
+      /FGP_JWT=([^;]+)/i,
+      /fgp_jwt=([^;]+)/i,
+      /JWT_TOKEN=([^;]+)/i,
+      /jwt_token=([^;]+)/i,
+      /BEARER_TOKEN=([^;]+)/i,
+      /bearer_token=([^;]+)/i,
+      /ACCESS_TOKEN=([^;]+)/i,
+      /access_token=([^;]+)/i,
+      /GARMIN_JWT=([^;]+)/i,
+      /garmin_jwt=([^;]+)/i,
+      /CONNECT_JWT=([^;]+)/i,
+      /connect_jwt=([^;]+)/i
+    ];
+
+    for (const cookie of cookies) {
+      for (const pattern of jwtPatterns) {
+        const match = cookie.match(pattern);
+        if (match && match[1] && match[1].length > 20) {
+          console.log(`🎯 [GarminConnect] Found JWT pattern: ${pattern.source} = ${match[1].substring(0, 20)}...`);
+          return match[1];
+        }
+      }
+    }
+
+    // Also look for JWT-like tokens (base64 with dots) in cookie values
+    for (const cookie of cookies) {
+      const jwtLikePattern = /([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/;
+      const match = cookie.match(jwtLikePattern);
+      if (match && match[1] && match[1].length > 100) {
+        console.log(`🎯 [GarminConnect] Found JWT-like token in cookie: ${match[1].substring(0, 20)}...`);
+        return match[1];
+      }
+    }
+
+    return undefined;
+  }
+}
+
+// Shared singleton instance for the entire app
+let sharedGarminService: GarminConnectService | null = null;
+
+/**
+ * Get the shared Garmin Connect service instance
+ * This ensures authentication persists across screens
+ */
+export function getSharedGarminService(): GarminConnectService {
+  if (!sharedGarminService) {
+    sharedGarminService = new GarminConnectService();
+    console.log('🌟 [GarminConnect] Created shared service instance');
+  }
+  return sharedGarminService;
+}
+
+/**
+ * Reset the shared service instance (useful for logout)
+ */
+export function resetSharedGarminService(): void {
+  sharedGarminService = null;
+  console.log('🗑️ [GarminConnect] Reset shared service instance');
+}

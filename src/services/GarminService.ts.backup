@@ -1,0 +1,407 @@
+import { GarminConnectService } from './GarminConnectService';
+// import { GarminConnectLibraryService } from './GarminConnectLibraryService'; // Disabled - import issues
+import { GarminWorkoutSyncService } from './GarminWorkoutSyncService';
+// import { SimpleGarminService } from './SimpleGarminService'; // Disabled - import issues
+import { 
+  GarminCredentials,
+  GarminAuthResponse,
+  GarminConnectionStatus,
+  GarminActivity,
+  GarminDailySummary,
+  GarminUserProfile 
+} from '../types/GarminTypes';
+import { WorkoutSession } from '../types/CalorieTypes';
+
+/**
+ * Simplified service interface for Garmin Connect integration
+ * Now uses the official garmin-connect library for better reliability
+ */
+export class GarminService {
+  private garminConnect: GarminConnectService; // Custom implementation only
+  private workoutSync: GarminWorkoutSyncService;
+  private static instance: GarminService;
+  private useLibrary = false; // Library disabled due to import issues
+
+  private constructor() {
+    // Initialize custom service only
+    this.garminConnect = new GarminConnectService({
+      timeout: 30000,
+      retryAttempts: 3,
+      retryDelay: 1000
+    });
+    this.workoutSync = new GarminWorkoutSyncService(this.garminConnect);
+    
+    console.log('🔧 [GarminService] Initialized with custom implementation only (libraries disabled)');
+  }
+
+  /**
+   * Get singleton instance
+   */
+  static getInstance(): GarminService {
+    if (!GarminService.instance) {
+      GarminService.instance = new GarminService();
+    }
+    return GarminService.instance;
+  }
+
+  /**
+   * Connect to Garmin with username and password using official library (with custom fallback)
+   */
+  async connect(username: string, password: string): Promise<GarminAuthResponse> {
+    console.log('🔗 [GarminService] Connecting to Garmin Connect using custom implementation...');
+
+    // Fallback to custom implementation
+    console.log('🔄 [GarminService] Using custom authentication as fallback...');
+    try {
+      const result = await this.garminConnect.testImprovedAuthentication({
+        username,
+        password
+      });
+      
+      if (result.success) {
+        console.log('✅ [GarminService] Custom authentication successful!');
+        
+        // Get user profile if available
+        let userProfile: GarminUserProfile | undefined;
+        try {
+          const session = this.garminConnect.getDetailedSessionInfo();
+          userProfile = session.userId ? {
+            userId: session.userId,
+            displayName: session.username || username,
+            email: username // Garmin uses email as username
+          } as GarminUserProfile : undefined;
+        } catch (error) {
+          console.warn('⚠️ [GarminService] Could not extract user profile:', error);
+        }
+        
+        return {
+          success: true,
+          userProfile
+        };
+      } else {
+        console.error('❌ [GarminService] Both authentication methods failed:', result.message);
+        return {
+          success: false,
+          error: result.message
+        };
+      }
+    } catch (error) {
+      console.error('❌ [GarminService] Authentication error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Authentication failed'
+      };
+    }
+  }
+
+  /**
+   * Check if currently connected to Garmin
+   */
+  async isConnected(): Promise<boolean> {
+    if (this.useLibrary) {
+      return this.garminLibrary.isConnected();
+    }
+    return await this.garminConnect.isConnected();
+  }
+
+  /**
+   * Get detailed connection status
+   */
+  async getConnectionStatus(): Promise<GarminConnectionStatus> {
+    if (this.useLibrary) {
+      return await this.garminLibrary.getConnectionStatus();
+    }
+    return await this.garminConnect.getConnectionStatus();
+  }
+
+  /**
+   * Disconnect from Garmin
+   */
+  async disconnect(): Promise<void> {
+    console.log('🔌 [GarminService] Disconnecting from Garmin Connect...');
+    if (this.useLibrary) {
+      await this.garminLibrary.disconnect();
+    } else {
+      await this.garminConnect.disconnect();
+    }
+  }
+
+  /**
+   * Get user profile information
+   */
+  async getUserProfile(): Promise<GarminUserProfile> {
+    if (this.useLibrary) {
+      return await this.garminLibrary.getUserProfile();
+    }
+    return await this.garminConnect.getUserProfile();
+  }
+
+  /**
+   * Sync recent activities (last 7 days by default)
+   */
+  async syncRecentActivities(days = 7): Promise<GarminActivity[]> {
+    console.log(`📊 [GarminService] Syncing activities from last ${days} days...`);
+    
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - days);
+    
+    if (this.useLibrary) {
+      console.log('🔗 [GarminService] Using official library for activities...');
+      return await this.garminLibrary.getActivities(startDate, endDate, 50);
+    }
+    
+    console.log('🔄 [GarminService] Using custom implementation for activities...');
+    return await this.garminConnect.getActivities(startDate, endDate, 50);
+  }
+
+  /**
+   * Get activities for a specific date range
+   */
+  async getActivitiesInRange(startDate: Date, endDate: Date): Promise<GarminActivity[]> {
+    console.log(`📊 [GarminService] Getting activities from ${startDate.toDateString()} to ${endDate.toDateString()}`);
+    
+    if (this.useLibrary) {
+      console.log('🔗 [GarminService] Using official library for activities...');
+      return await this.garminLibrary.getActivities(startDate, endDate, 100);
+    }
+    
+    console.log('🔄 [GarminService] Using custom implementation for activities...');
+    return await this.garminConnect.getActivities(startDate, endDate, 100);
+  }
+
+  /**
+   * Get daily summary for today
+   */
+  async getTodaysSummary(): Promise<GarminDailySummary> {
+    if (this.useLibrary) {
+      console.log('🔗 [GarminService] Using official library for daily summary...');
+      return await this.garminLibrary.getDailySummary(new Date());
+    }
+    
+    console.log('🔄 [GarminService] Using custom implementation for daily summary...');
+    return await this.garminConnect.getDailySummary(new Date());
+  }
+
+  /**
+   * Get daily summary for a specific date
+   */
+  async getDailySummary(date: Date): Promise<GarminDailySummary> {
+    if (this.useLibrary) {
+      console.log('🔗 [GarminService] Using official library for daily summary...');
+      return await this.garminLibrary.getDailySummary(date);
+    }
+    
+    console.log('🔄 [GarminService] Using custom implementation for daily summary...');
+    return await this.garminConnect.getDailySummary(date);
+  }
+
+  /**
+   * Test activities with current custom implementation
+   */
+  async testActivitiesRetrieval(): Promise<void> {
+    console.log('🧪 [GarminService] Testing activities retrieval with current implementation...');
+    
+    try {
+      const activities = await this.garminConnect.getActivities(new Date(Date.now() - 7*24*60*60*1000), new Date(), 10);
+      console.log(`🎯 [GarminService] Current implementation returned ${activities.length} activities`);
+      
+      if (activities.length > 0) {
+        console.log('📊 [GarminService] Sample activity:', JSON.stringify(activities[0], null, 2));
+      }
+    } catch (error) {
+      console.error('❌ [GarminService] Activities test failed:', error);
+    }
+  }
+
+  /**
+   * Test library methods to find working data sources
+   */
+  async testLibraryMethods(): Promise<void> {
+    if (this.useLibrary) {
+      console.log('🧪 [GarminService] Testing official library methods...');
+      return await this.garminLibrary.testLibraryMethods();
+    } else {
+      console.log('📋 [GarminService] Library testing not available - using custom implementation');
+    }
+  }
+
+  /**
+   * Sync all data for today (activities + daily summary)
+   */
+  async syncTodaysData(): Promise<{
+    activities: GarminActivity[];
+    dailySummary: GarminDailySummary;
+  }> {
+    console.log('🔄 [GarminService] Syncing today\'s data...');
+    
+    const today = new Date();
+    const startOfDay = new Date(today);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    let activities: GarminActivity[];
+    let dailySummary: GarminDailySummary;
+    
+    if (this.useLibrary) {
+      console.log('🔗 [GarminService] Using official library for today\'s data...');
+      [activities, dailySummary] = await Promise.all([
+        this.garminLibrary.getActivities(startOfDay, today, 20),
+        this.garminLibrary.getDailySummary(today)
+      ]);
+    } else {
+      console.log('🔄 [GarminService] Using custom implementation for today\'s data...');
+      [activities, dailySummary] = await Promise.all([
+        this.garminConnect.getActivities(startOfDay, today, 20),
+        this.garminConnect.getDailySummary(today)
+      ]);
+    }
+
+    console.log(`✅ [GarminService] Synced ${activities.length} activities and daily summary`);
+    
+    return { activities, dailySummary };
+  }
+
+  /**
+   * Perform initial workout sync (last 30 days) and integrate with CalorieStore
+   */
+  async performInitialWorkoutSync(
+    onWorkoutSynced: (workout: Omit<WorkoutSession, 'id' | 'timestamp'>) => void
+  ): Promise<{
+    totalActivities: number;
+    newActivities: number;
+    skippedDuplicates: number;
+  }> {
+    console.log('🏃‍♂️ [GarminService] Starting initial workout sync...');
+    
+    const result = await this.workoutSync.performInitialSync((workout, isNew) => {
+      if (isNew) {
+        // Transform to the format expected by CalorieStore.logWorkout
+        const workoutForStore: Omit<WorkoutSession, 'id' | 'timestamp'> = {
+          date: workout.date,
+          sport: workout.sport,
+          name: workout.name,
+          duration: workout.duration,
+          startTime: workout.startTime,
+          endTime: workout.endTime,
+          intensity: workout.intensity,
+          caloriesBurned: workout.caloriesBurned,
+          distance: workout.distance,
+          avgHeartRate: workout.avgHeartRate,
+          maxHeartRate: workout.maxHeartRate,
+          avgPower: workout.avgPower,
+          maxPower: workout.maxPower,
+          rpe: workout.rpe,
+          notes: workout.notes,
+          equipment: workout.equipment
+        };
+        
+        onWorkoutSynced(workoutForStore);
+      }
+    });
+
+    console.log(`🎉 [GarminService] Initial workout sync complete: ${result.newActivities}/${result.totalActivities} workouts`);
+    return result;
+  }
+
+  /**
+   * Sync recent workouts (last 7 days) and integrate with CalorieStore
+   */
+  async syncRecentWorkouts(
+    onWorkoutSynced: (workout: Omit<WorkoutSession, 'id' | 'timestamp'>) => void
+  ): Promise<{
+    newActivities: number;
+  }> {
+    console.log('🔄 [GarminService] Syncing recent workouts...');
+    
+    const result = await this.workoutSync.syncRecentActivities((workout, isNew) => {
+      if (isNew) {
+        const workoutForStore: Omit<WorkoutSession, 'id' | 'timestamp'> = {
+          date: workout.date,
+          sport: workout.sport,
+          name: workout.name,
+          duration: workout.duration,
+          startTime: workout.startTime,
+          endTime: workout.endTime,
+          intensity: workout.intensity,
+          caloriesBurned: workout.caloriesBurned,
+          distance: workout.distance,
+          avgHeartRate: workout.avgHeartRate,
+          maxHeartRate: workout.maxHeartRate,
+          avgPower: workout.avgPower,
+          maxPower: workout.maxPower,
+          rpe: workout.rpe,
+          notes: workout.notes,
+          equipment: workout.equipment
+        };
+        
+        onWorkoutSynced(workoutForStore);
+      }
+    });
+
+    console.log(`✅ [GarminService] Recent workout sync complete: ${result.newActivities} new workouts`);
+    return result;
+  }
+
+  /**
+   * Get workout sync statistics
+   */
+  getWorkoutSyncStats() {
+    return this.workoutSync.getProcessedActivityStats();
+  }
+
+  /**
+   * Clear workout sync history (useful for re-syncing)
+   */
+  async clearWorkoutSyncHistory(): Promise<void> {
+    await this.workoutSync.clearProcessedActivities();
+  }
+
+  /**
+   * Test connection by attempting to get user profile
+   */
+  async testConnection(): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log('🧪 [GarminService] Testing connection...');
+      
+      const isConnected = await this.isConnected();
+      if (!isConnected) {
+        return { success: false, error: 'Not connected to Garmin' };
+      }
+
+      if (this.useLibrary) {
+        const result = await this.garminLibrary.testConnection();
+        return result;
+      } else {
+        await this.getUserProfile();
+        console.log('✅ [GarminService] Connection test successful');
+        return { success: true };
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('❌ [GarminService] Connection test failed:', errorMessage);
+      
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Get connection health status
+   */
+  async getHealthStatus(): Promise<{
+    isHealthy: boolean;
+    connectionStatus: GarminConnectionStatus;
+    lastTestResult?: { success: boolean; error?: string };
+  }> {
+    const connectionStatus = await this.getConnectionStatus();
+    const lastTestResult = await this.testConnection();
+    
+    return {
+      isHealthy: connectionStatus.isConnected && lastTestResult.success,
+      connectionStatus,
+      lastTestResult
+    };
+  }
+}
+
+// Export singleton instance for easy use
+export const garminService = GarminService.getInstance();

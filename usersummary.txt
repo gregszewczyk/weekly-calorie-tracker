@@ -1,0 +1,205 @@
+Request URL
+https://connect.garmin.com/usersummary-service/usersummary/daily/c26b4b09-a3d2-4d5c-bc02-ce35dfeb75f9?calendarDate=2025-08-10
+Request Method
+GET
+Status Code
+200 OK
+Remote Address
+104.17.168.14:443
+Referrer Policy
+strict-origin-when-cross-origin
+cache-control
+no-cache, no-store, private
+cf-cache-status
+DYNAMIC
+cf-ray
+96d2440a7d5760fa-LHR
+content-encoding
+br
+content-type
+application/json
+date
+Sun, 10 Aug 2025 20:33:01 GMT
+nel
+{"success_fraction":0.01,"report_to":"cf-nel","max_age":604800}
+pragma
+no-cache
+report-to
+{"endpoints":[{"url":"https:\/\/a.nel.cloudflare.com\/report\/v4?s=CPQHmoqWmOdrYvfAKU9ry1qP90WucvYZPZtz0SHb87qdE6B1QXI8p2uTtuh7XG1hDpinV1WinWQJdv31JLjsyVXBDLJZWErdWqhg1N7jT%2Fadlyy0pwov7jfRruyHyU5Jt65lOA%3D%3D"}],"group":"cf-nel","max_age":604800}
+server
+cloudflare
+:authority
+connect.garmin.com
+:method
+GET
+:path
+/usersummary-service/usersummary/daily/c26b4b09-a3d2-4d5c-bc02-ce35dfeb75f9?calendarDate=2025-08-10
+:scheme
+https
+accept
+application/json, text/plain, */*
+accept-encoding
+gzip, deflate, br, zstd
+accept-language
+en-US,en;q=0.9
+authorization
+Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpLW9hdXRoLXNpZ25lci1wcm9kLTIwMjQtcTEifQ.eyJzY29wZSI6WyJBVFBfUkVBRCIsIkFUUF9XUklURSIsIkNPTU1VTklUWV9DT1VSU0VfUkVBRCIsIkNPTU1VTklUWV9DT1VSU0VfV1JJVEUiLCJDT05ORUNUX05PTl9TT0NJQUxfU0hBUkVEX1JFQUQiLCJDT05ORUNUX1JFQUQiLCJDT05ORUNUX1dSSVRFIiwiRElWRV9BUElfSU1BR0VfUFJFVklFVyIsIkRJVkVfQVBJX1JFQUQiLCJESVZFX0FQSV9XUklURSIsIkRJVkVfU0hBUkVEX1JFQUQiLCJEVF9DTElFTlRfQU5BTFlUSUNTX1dSSVRFIiwiR0hTX0hJRCIsIkdIU19SRUdJU1RSQVRJT04iLCJHSFNfU0FNRCIsIkdPTEZfQVBJX1JFQUQiLCJHT0xGX0FQSV9XUklURSIsIkdPTEZfU0hBUkVEX1JFQUQiLCJJTlNJR0hUU19SRUFEIiwiSU5TSUdIVFNfV1JJVEUiLCJPTVRfQ0FNUEFJR05fUkVBRCIsIk9NVF9TVUJTQ1JJUFRJT05fUkVBRCIsIlBST0RVQ1RfU0VBUkNIX1JFQUQiXSwiaXNzIjoiaHR0cHM6Ly9kaWF1dGguZ2FybWluLmNvbSIsInJldm9jYXRpb25fZWxpZ2liaWxpdHkiOlsiR0xPQkFMX1NJR05PVVQiXSwiY2xpZW50X3R5cGUiOiJVTkRFRklORUQiLCJleHAiOjE3NTQ4NTgyODAsImlhdCI6MTc1NDg1Nzk4MCwiZ2FybWluX2d1aWQiOiJkYWVhMDFkOS04NTU4LTRhODgtYTdmMi05MmNhY2U5NWU0MTciLCJqdGkiOiIwMDQ0MWM4My00ZGNlLTQyZWUtOWRjOC0yYzY1OGUwOTViNzgiLCJjbGllbnRfaWQiOiJDT05ORUNUX1dFQiIsImZncCI6IjgxMzdjMWMzOGJkOWQ4MTA3ZjdiZjRlNzEyNjUxMTA1YjIxZDMzZTE2ZTlkODRjNWNmMDE2NjU0Y2ViYTQxYjAifQ.bSTxh6GBM7-p1duAkUZtZY6bi_r5Sf2YuUYXrphv5xMyJCe6gLgU_YWyD4eYc9K8JqYhLqMv6RbLE1G8ue6t0cXFQekj92Vavdm6Gws25gX7S7u1uEnErHctQiTj2UX4k_rf8DWOpYPIbqfGA2mNegBTY2SzgtzJECFpkC92fJBPaS80XTUOOFv-tFQ-TgcYXCdJd1nt7DooU9jwh21bzzM4aSJ5ete9fvtYX0i8V3cwhyA2bJCxcOAqCO5TCFz0Rnm_hCIeCpbWoZG6-i2qcyD8eMbpoK37BbXHOdvhAcMbSUrWvBlUca4F3gaHM7aoYVBPszC3Eys3Sxy1IQtwug
+baggage
+sentry-environment=prod,sentry-release=connect%405.15.30,sentry-public_key=f0377f25d5534ad589ab3a9634f25e71,sentry-trace_id=1ded38acffdc4dbebed8746dfe09ba38,sentry-sample_rate=1,sentry-transaction=%2Fmodern%2Fcalories%2F%3Cdate%3E%2F%3Cdigits%3E,sentry-sampled=true
+cookie
+notice_preferences=0:; notice_gdpr_prefs=0:; notice_poptime=1662667200000; cmapi_gtm_bl=ga-ms-ua-ta-asp-bzi-sp-awct-cts-csm-img-flc-fls-mpm-mpr-m6d-tc-tdc; cmapi_cookie_privacy=permit 1 required; optout_domains_pc=; notice_behavior=implied,eu; utag_main__sn=2; _cfuvid=r6PnuD0UHWdWXHJALksBJnhL5ZuoqJen4NMtM734JlU-1754383101437-0.0.1.1-604800000; __cfruid=e7c64546435fcaf858745e9da8f1668ecb542d07-1754383102; GarminUserPrefs=en-US; notice_behavior=implied,eu; notice_preferences=0:; notice_gdpr_prefs=0:; notice_poptime=1619726400000; GMN_TRACKABLE=1; __cflb=02DiuJLbVZHipNWxN8yYRX3u8XkAfEE5ATxPTCqE1d4V2; CONSENTMGR=c1:0%7Cc2:0%7Cc3:0%7Cc4:0%7Cc5:0%7Cc6:0%7Cc7:0%7Cc8:0%7Cc9:0%7Cc10:0%7Cc11:0%7Cc12:0%7Cc13:0%7Cc14:0%7Cc15:0%7Cts:1754844273538%7Cconsent:false; GARMIN-SSO=1; GARMIN-SSO-CUST-GUID=daea01d9-8558-4a88-a7f2-92cace95e417; SESSIONID=NGU0YjA1Y2ItOTMzYS00NzQzLWIyMTEtZTM5NDU2NTJmYmUx; JWT_WEB=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTQ4NjUxNzcsImlzcyI6ImF1dGgwIiwicm9sZXMiOlsiNCIsIjciLCI4Il19.KWfq_piwpat4Jb8ZU-hXG8XHyDvVMNGLrUTBtGijlDw; JWT_FGP=3178187e-31a8-44b9-946d-a2889ab03d96
+di-backend
+connectapi.garmin.com
+nk
+NT
+priority
+u=1, i
+referer
+https://connect.garmin.com/modern/calories/2025-08-10/0
+sec-ch-ua
+"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"
+sec-ch-ua-mobile
+?0
+sec-ch-ua-platform
+"Windows"
+sec-fetch-dest
+empty
+sec-fetch-mode
+cors
+sec-fetch-site
+same-origin
+sentry-trace
+1ded38acffdc4dbebed8746dfe09ba38-966f2cdd41026776-1
+user-agent
+Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36
+x-app-ver
+5.15.1.1d
+x-lang
+en-US
+
+
+RESPONSE:
+{
+    "userProfileId": 124421837,
+    "totalKilocalories": 1973.0,
+    "activeKilocalories": 372.0,
+    "bmrKilocalories": 1601.0,
+    "wellnessKilocalories": 1973.0,
+    "burnedKilocalories": null,
+    "consumedKilocalories": null,
+    "remainingKilocalories": 2226.0,
+    "totalSteps": 8174,
+    "netCalorieGoal": 1854,
+    "totalDistanceMeters": 6546,
+    "wellnessDistanceMeters": 6546,
+    "wellnessActiveKilocalories": 372.0,
+    "netRemainingKilocalories": 2226.0,
+    "userDailySummaryId": 124421837,
+    "calendarDate": "2025-08-10",
+    "rule": {
+        "typeId": 4,
+        "typeKey": "groups"
+    },
+    "uuid": "84d94df81d1d42aca8cbe8e19c76e635",
+    "dailyStepGoal": 15000,
+    "wellnessStartTimeGmt": "2025-08-09T23:00:00.0",
+    "wellnessStartTimeLocal": "2025-08-10T00:00:00.0",
+    "wellnessEndTimeGmt": "2025-08-10T16:54:00.0",
+    "wellnessEndTimeLocal": "2025-08-10T17:54:00.0",
+    "durationInMilliseconds": 64440000,
+    "wellnessDescription": null,
+    "highlyActiveSeconds": 1688,
+    "activeSeconds": 3552,
+    "sedentarySeconds": 33473,
+    "sleepingSeconds": 25727,
+    "includesWellnessData": true,
+    "includesActivityData": false,
+    "includesCalorieConsumedData": false,
+    "privacyProtected": false,
+    "moderateIntensityMinutes": 9,
+    "vigorousIntensityMinutes": 0,
+    "floorsAscendedInMeters": 8.125,
+    "floorsDescendedInMeters": 11.925,
+    "floorsAscended": 2.66568,
+    "floorsDescended": 3.9124,
+    "intensityMinutesGoal": 150,
+    "userFloorsAscendedGoal": 10,
+    "minHeartRate": 59,
+    "maxHeartRate": 131,
+    "restingHeartRate": 63,
+    "lastSevenDaysAvgRestingHeartRate": 63,
+    "source": "GARMIN",
+    "averageStressLevel": 21,
+    "maxStressLevel": 96,
+    "stressDuration": 15600,
+    "restStressDuration": 37260,
+    "activityStressDuration": 7860,
+    "uncategorizedStressDuration": 3720,
+    "totalStressDuration": 64440,
+    "lowStressDuration": 11580,
+    "mediumStressDuration": 3000,
+    "highStressDuration": 1020,
+    "stressPercentage": 24.21,
+    "restStressPercentage": 57.82,
+    "activityStressPercentage": 12.2,
+    "uncategorizedStressPercentage": 5.77,
+    "lowStressPercentage": 17.97,
+    "mediumStressPercentage": 4.66,
+    "highStressPercentage": 1.58,
+    "stressQualifier": "BALANCED",
+    "measurableAwakeDuration": 35040,
+    "measurableAsleepDuration": 25680,
+    "lastSyncTimestampGMT": "2025-08-10T16:54:19.431",
+    "minAvgHeartRate": 60,
+    "maxAvgHeartRate": 130,
+    "bodyBatteryChargedValue": 82,
+    "bodyBatteryDrainedValue": 52,
+    "bodyBatteryHighestValue": 94,
+    "bodyBatteryLowestValue": 12,
+    "bodyBatteryMostRecentValue": 42,
+    "bodyBatteryDuringSleep": 88,
+    "bodyBatteryAtWakeTime": 94,
+    "bodyBatteryVersion": 3.0,
+    "abnormalHeartRateAlertsCount": null,
+    "averageSpo2": 95.0,
+    "lowestSpo2": 86,
+    "latestSpo2": 98,
+    "latestSpo2ReadingTimeGmt": "2025-08-10T02:59:00.0",
+    "latestSpo2ReadingTimeLocal": "2025-08-10T03:59:00.0",
+    "averageMonitoringEnvironmentAltitude": 29.0,
+    "restingCaloriesFromActivity": null,
+    "bodyBatteryDynamicFeedbackEvent": {
+        "eventTimestampGmt": "2025-08-10T15:42:01",
+        "bodyBatteryLevel": "HIGH",
+        "feedbackShortType": "DAY_RECOVERING_AND_INACTIVE",
+        "feedbackLongType": "DAY_RECOVERING_AND_INACTIVE"
+    },
+    "endOfDayBodyBatteryDynamicFeedbackEvent": {
+        "eventTimestampGmt": "2025-08-10T00:01:41",
+        "bodyBatteryLevel": "HIGH",
+        "feedbackShortType": "SLEEP_TIME_PASSED_BALANCED_AND_INACTIVE",
+        "feedbackLongType": "SLEEP_TIME_PASSED_BALANCED_AND_INACTIVE"
+    },
+    "bodyBatteryActivityEventList": [
+        {
+            "eventType": "SLEEP",
+            "eventStartTimeGmt": "2025-08-09T22:04:20",
+            "timezoneOffset": 3600000,
+            "durationInMilliseconds": 29040000,
+            "bodyBatteryImpact": 88,
+            "feedbackType": "NONE",
+            "shortFeedback": "NONE",
+            "deviceId": 3483786923,
+            "activityName": null,
+            "activityType": null,
+            "activityId": null,
+            "eventUpdateTimeGmt": "2025-08-10T06:08:47"
+        }
+    ],
+    "avgWakingRespirationValue": 15.0,
+    "highestRespirationValue": 24.0,
+    "lowestRespirationValue": 7.0,
+    "latestRespirationValue": 15.0,
+    "latestRespirationTimeGMT": "2025-08-10T16:52:00.0",
+    "respirationAlgorithmVersion": 200
+}
