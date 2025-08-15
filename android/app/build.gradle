@@ -21,8 +21,7 @@ react {
     cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
     bundleCommand = "export:embed"
 
-    /* Autolinking */
-    autolinkLibrariesWithApp()
+    /* Autolinking handled by Expo scripts */
 }
 
 /**
@@ -136,12 +135,3 @@ dependencies {
     }
 }
 
-// Ensure autolinking config is generated before configuration
-// The settings plugin usually generates it; this is a safety hook
-afterEvaluate {
-    def autolinkingDir = file("${rootProject.projectDir}/build/generated/autolinking")
-    if (!autolinkingDir.exists()) {
-        autolinkingDir.mkdirs()
-        file("${autolinkingDir}/autolinking.json").text = "{}"
-    }
-}
