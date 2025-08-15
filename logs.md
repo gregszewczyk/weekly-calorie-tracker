@@ -1,54 +1,48 @@
-LOG  💧 [CalorieStore] onRehydrateStorage callback created  
- LOG  📤 [Storage] Getting item: weekly-calorie-tracker-store
- LOG  ⏳ [AppNavigator] Waiting for hydration before rendering navigator     
- LOG  🔄 [AppNavigator] Component mounted
- LOG  📊 [AppNavigator] Current goalConfiguration: false
- LOG  💧 [AppNavigator] Hydration status: false
- LOG  🔍 [CalorieStore] Current store state: {"goalMode": undefined, "hasAthleteConfig": false, "hasCurrentWeekGoal": false, "hasGoalConfiguration": false, "weeklyDataCount": 0, "weightEntriesCount": 0}
- LOG  📊 [AppNavigator] goalConfiguration changed: false
- LOG  💧 [AppNavigator] Hydration status changed: false
- LOG  ⚠️ [CalorieStore] No goal configuration found, skipping week initializ
-ation
- LOG  🚀 [DailySync] Initializing daily activity sync...
- LOG  ℹ️ [DailySync] Using direct usersummary API for daily calories - skipp
-ing activity sync
- LOG  ℹ️ [DailySync] Activity sync only used for manual testing/debugging   
- LOG  🔄 [DailySync] Syncing today's active calories for date: 2025-08-13   
- LOG  🏥 [HealthDeviceManager] Initializing HealthDeviceManager...
- LOG  🗋 [HealthDeviceManager] Loading stored connections from key: @health_ 
-device_connections
- LOG  🏥 [HealthDeviceManager] Starting session validation...
- LOG  🔍 [HealthDeviceManager] Validating existing sessions...
- LOG  🔍 [HealthDeviceManager] Current connections before validation: 0     
- LOG  🔍 [HealthDeviceManager] Checking if Garmin has stored session...     
- LOG  🌐 [ProxyService] Initializing Garmin Proxy Service...
- LOG  🔗 [ProxyService] Using proxy URL: http://10.3.206.134:3006
- LOG  🗋 [ProxyService] Starting session loading...
- LOG  🔍 [ProxyService] Loading stored session...
- LOG  🔍 [ProxyService] Using storage key: @garmin_proxy_session
- LOG  🔍 [HealthDeviceManager] Garmin hasStoredSession result: false        
- LOG  🔍 [HealthDeviceManager] Garmin isAuthenticated result: false
- LOG  ✅ [HealthDeviceManager] Session validation complete
- LOG  🔍 [DailySync] Health device connection status: false
- LOG  ⚠️ [DailySync] No health device connection for today's sync
- LOG  🔄 [App] Attempting Garmin auto-login on startup...
- LOG  🔄 [ProxyService] Attempting automatic re-login...
- WARN  expo-crypto not available, using fallback random generation
- LOG  📤 [Storage] Got value: NULL
- LOG  ⏳ [AppNavigator] Waiting for hydration before rendering navigator     
- LOG  💧 [CalorieStore] ✅ REHYDRATION CALLBACK EXECUTING!
- LOG  💧 [CalorieStore] State exists: true
- LOG  💧 [CalorieStore] Error exists: false
- LOG  💧 [CalorieStore] Setting _hasHydrated = true
- LOG  💧 [CalorieStore] GoalConfig after rehydration: false
- LOG  💧 [CalorieStore] GoalConfig mode: undefined
- LOG  💧 [CalorieStore] Rehydration callback complete
- LOG  🗋 [HealthDeviceManager] Raw stored connections: NULL
- LOG  🗋 [HealthDeviceManager] No stored connections found
- LOG  🔍 [ProxyService] Raw stored data: NULL
- LOG  🔍 [ProxyService] Stored session exists: false
- LOG  🚫 [ProxyService] Auto-login not permitted or consent expired
- LOG  ℹ️ [App] Garmin auto-login not attempted (no valid credentials or cons
-ent)
- LOG  🚨 [App] Forcing hydration check - rehydration callback may have failed
- LOG  🚨 [App] Current goalConfiguration: false
+FAILURE: Build completed with 2 failures.
+1: Task failed with an exception.
+-----------
+* What went wrong:
+Execution failed for task ':app:compileReleaseKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+==============================================================================
+2: Task failed with an exception.
+-----------
+* Where:
+Build file '/home/expo/workingdir/build/android/app/build.gradle' line: 12
+* What went wrong:
+Configuration cache problems found in this build.
+7 problems were found storing the configuration cache, 6 of which seem unique.
+- Build file '../node_modules/react-native-svg/android/build.gradle': line 47: external process started 'node --print require.resolve('react-native/package.json')'
+  See https://docs.gradle.org/8.13/userguide/configuration_cache.html#config_cache:requirements:external_processes
+- Build file 'app/build.gradle': line 12: external process started 'node -e require('expo/scripts/resolveAppEntry') /home/expo/workingdir/build android absolute'
+  See https://docs.gradle.org/8.13/userguide/configuration_cache.html#config_cache:requirements:external_processes
+- Build file 'app/build.gradle': line 13: external process started 'node --print require.resolve('react-native/package.json')'
+  See https://docs.gradle.org/8.13/userguide/configuration_cache.html#config_cache:requirements:external_processes
+- Build file 'app/build.gradle': line 14: external process started 'node --print require.resolve('react-native/package.json')'
+  See https://docs.gradle.org/8.13/userguide/configuration_cache.html#config_cache:requirements:external_processes
+- Build file 'app/build.gradle': line 15: external process started 'node --print require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })'
+  See https://docs.gradle.org/8.13/userguide/configuration_cache.html#config_cache:requirements:external_processes
+- Build file 'app/build.gradle': line 20: external process started 'node --print require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })'
+  See https://docs.gradle.org/8.13/userguide/configuration_cache.html#config_cache:requirements:external_processes
+See the complete report at file:///home/expo/workingdir/build/android/build/reports/configuration-cache/b8uqugc0h9mnqu65wjwmi19ug/cmu1b7hx61ehcpn0o2kli9tao/configuration-cache-report.html
+> Starting an external process 'node -e require('expo/scripts/resolveAppEntry') /home/expo/workingdir/build android absolute' during configuration time is unsupported.
+> Starting an external process 'node --print require.resolve('react-native/package.json')' during configuration time is unsupported.
+> Starting an external process 'node --print require.resolve('react-native/package.json')' during configuration time is unsupported.
+> Starting an external process 'node --print require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })' during configuration time is unsupported.
+> Starting an external process 'node --print require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })' during configuration time is unsupported.
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+==============================================================================
+BUILD FAILED in 4m 41s
+278 actionable tasks: 278 executed
+Configuration cache entry discarded with 7 problems.
+Error: Gradle build failed with unknown error. See logs for the "Run gradlew" phase for more information.

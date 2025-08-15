@@ -217,8 +217,8 @@ const HealthDeviceSetupScreen: React.FC<Props> = ({
     return (
       <View key={platform} style={[styles.platformCard, { backgroundColor: theme.colors.surface }]}>
         <View style={styles.platformHeader}>
-          <View style={styles.platformIcon}>
-            <Text style={styles.platformIconText}>{platformInfo.icon}</Text>
+          <View style={[styles.platformIcon, { backgroundColor: platformInfo.color + '20' }]}>
+            <Ionicons name="fitness" size={24} color={platformInfo.color} />
           </View>
           <View style={styles.platformInfo}>
             <Text style={[styles.platformName, { color: theme.colors.text }]}>
@@ -418,7 +418,7 @@ const HealthDeviceSetupScreen: React.FC<Props> = ({
             </TouchableOpacity>
 
             <Text style={[styles.securityNote, { color: theme.colors.textSecondary }]}>
-              🔒 Your credentials are securely transmitted and not stored on your device.
+              Your credentials are securely transmitted and not stored on your device.
             </Text>
           </View>
         </SafeAreaView>
@@ -465,6 +465,7 @@ const styles = StyleSheet.create({
   platformCard: {
     borderRadius: 16,
     padding: 20,
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -480,13 +481,9 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
-  },
-  platformIconText: {
-    fontSize: 24,
   },
   platformInfo: {
     flex: 1,

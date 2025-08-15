@@ -6,9 +6,9 @@ buildscript {
     mavenCentral()
   }
   dependencies {
-    classpath('com.android.tools.build:gradle:8.7.3')
+    classpath('com.android.tools.build:gradle:8.2.2')
     classpath('com.facebook.react:react-native-gradle-plugin')
-    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0')
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22')
   }
 }
 
@@ -38,18 +38,7 @@ allprojects {
   
   // Resolution strategy to handle problematic dependencies
   configurations.all {
-    resolutionStrategy {
-      // Completely exclude JFrog build-info-extractor as it's not needed for React Native
-      eachDependency { details ->
-        if (details.requested.group == 'org.jfrog.buildinfo') {
-          details.because('JFrog build-info-extractor not needed and causes EAS build issues')
-          // Exclude this dependency entirely
-          details.useTarget(group: 'empty', name: 'empty', version: '1.0')
-        }
-      }
-    }
-    
-    // Alternative: exclude the problematic group entirely
+    // Simply exclude the problematic JFrog group entirely
     exclude group: 'org.jfrog.buildinfo'
   }
 }

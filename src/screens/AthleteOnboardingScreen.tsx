@@ -829,8 +829,7 @@ const AthleteOnboardingScreen: React.FC<AthleteOnboardingScreenProps> = ({
       <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView 
           style={styles.keyboardAvoid}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           {renderProgressBar()}
           
@@ -929,7 +928,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 40,
+    paddingBottom: 140, // Account for fixed button container height
   },
   stepContainer: {
     padding: 20,
@@ -1303,8 +1302,12 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginTop: 6,
   },
 
-  // Buttons
+  // Buttons - Fixed positioning to prevent keyboard interference
   buttonContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     padding: 20,
     paddingBottom: Platform.OS === 'ios' ? 34 : 20,
     backgroundColor: theme.colors.surface,
