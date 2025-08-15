@@ -104,3 +104,7 @@ coverage/
 .expo/
 dist/
 web-build/
+weekly-calorie-tracker.aab
+weekly-calorie-tracker.apks
+weekly-calorie-tracker/universal.apk
+weekly-calorie-tracker/toc.pb
