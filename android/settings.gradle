@@ -3,13 +3,6 @@ pluginManagement {
     gradlePluginPortal() // ensures plugins published to the Gradle Plugin Portal are found
     mavenCentral()       // react-native-gradle-plugin is usually on Maven Central
     google()             // Android artifacts
-    // fallback in case your internal artifactory doesn't proxy the plugin:
-    maven {
-      url = uri("https://maven.pkg.github.com/facebook/react-native")
-      // if this repo requires auth in CI, add credentials or prefer mavenCentral()
-    }
-    // keep your internal artifactory if required:
-    // maven { url "http://maven.production.caches.eas-build.internal/artifactory/libs-release" }
   }
 
   def reactNativeGradlePlugin = new File(
@@ -30,12 +23,6 @@ dependencyResolutionManagement {
   repositories {
     google()
     mavenCentral()
-    // keep the same fallback here as well:
-    maven {
-      url = uri("https://maven.pkg.github.com/facebook/react-native")
-    }
-    // maven { url "https://jitpack.io" } // optional if you need it
-    // maven { url "http://maven.production.caches.eas-build.internal/artifactory/libs-release" }
   }
 }
 

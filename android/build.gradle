@@ -4,17 +4,9 @@ buildscript {
   repositories {
     google()
     mavenCentral()
-    // fallback for react-native plugin if needed:
-    maven {
-      url = uri("https://maven.pkg.github.com/facebook/react-native")
-      // Note: GitHub Packages may require auth in CI; prefer mavenCentral() when possible.
-    }
-    // If you must keep the internal artifactory, keep it but add public repos too:
-    // maven { url "http://maven.production.caches.eas-build.internal/artifactory/libs-release" }
   }
   dependencies {
     classpath('com.android.tools.build:gradle:8.2.2')
-    classpath('com.facebook.react:react-native-gradle-plugin:0.76.9')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22')
   }
 }
