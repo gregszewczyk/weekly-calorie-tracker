@@ -6,48 +6,7 @@ buildscript {
     mavenCentral()
   }
   dependencies {
-    classpath('com.android.tools.build:gradle:8.2.2')
+    classpath('com.android.tools.build:gradle:8.4.2')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22')
   }
 }
-
-def reactNativeAndroidDir = new File(
-  providers.exec {
-    workingDir(rootDir)
-    commandLine("node", "--print", "require.resolve('react-native/package.json')")
-  }.standardOutput.asText.get().trim(),
-  "../android"
-)
-
-allprojects {
-  repositories {
-    maven {
-      // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-      url(reactNativeAndroidDir)
-    }
-
-    google()
-    mavenCentral()
-    maven { url 'https://www.jitpack.io' }
-    
-    // Fallback for JFrog artifacts that might be missing from EAS internal cache
-    maven { url 'https://oss.jfrog.org/artifactory/oss-release-local' }
-    gradlePluginPortal()
-  }
-  
-  // Resolution strategy to handle problematic dependencies
-  configurations.all {
-    // Simply exclude the problematic JFrog group entirely
-    exclude group: 'org.jfrog.buildinfo'
-    
-    // Force consistent Kotlin versions to prevent API mismatches
-    resolutionStrategy.force(
-      'org.jetbrains.kotlin:kotlin-stdlib:1.9.22',
-      'org.jetbrains.kotlin:kotlin-stdlib-common:1.9.22',
-      'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22'
-    )
-  }
-}
-
-// remove unknown Expo plugin that is not available in EAS environment
-apply plugin: "com.facebook.react.rootproject"
