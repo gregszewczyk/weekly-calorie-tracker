@@ -13,7 +13,7 @@ const NetworkTest: React.FC = () => {
 
   const getProxyUrl = () => {
     // Use production Vercel deployment for all platforms
-    return 'https://garmin-proxy-server-lvsj1lvbg-gregs-projects-d9fe7e04.vercel.app';
+    return 'https://garmin-proxy-server.vercel.app';
   };
 
   const testConnection = async () => {

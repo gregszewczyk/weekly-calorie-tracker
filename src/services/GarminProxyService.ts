@@ -72,7 +72,7 @@ export class GarminProxyService {
 
   private getProxyUrl(): string {
     // Use production Vercel deployment for all platforms
-    return 'https://garmin-proxy-server-lvsj1lvbg-gregs-projects-d9fe7e04.vercel.app';
+    return 'https://garmin-proxy-server.vercel.app';
   }
 
   private async loadStoredSession(): Promise<void> {
