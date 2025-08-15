@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme, Theme } from '../contexts/ThemeContext';
 import { RootStackParamList } from '../types/NavigationTypes';
 import { healthDeviceManager } from '../services/HealthDeviceManager';
@@ -42,8 +42,8 @@ interface TDEECalculation {
 interface Props {
   route: {
     params: {
-      athleteProfile?: AthleteProfile; // NEW: Use full athlete profile
-      userStats?: {
+      athleteProfile?: AthleteProfile;
+      userStats: {
         age: number;
         gender: 'male' | 'female';
         weight: number; // kg
@@ -57,7 +57,7 @@ interface Props {
   };
 }
 
-const EnhancedTDEEComparisonScreen: React.FC<Props> = ({ route }) => {
+const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'EnhancedTDEEComparison'>> = ({ route }) => {
   const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
   const { athleteProfile, userStats, goalConfig, onAcceptEnhanced, onUseStandard } = route.params;

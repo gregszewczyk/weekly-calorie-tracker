@@ -21,6 +21,7 @@ export type RootStackParamList = {
     tdeeMethod?: 'standard' | 'enhanced';
   };
   EnhancedTDEEComparison: {
+    athleteProfile?: AthleteProfile;
     userStats: {
       age: number;
       gender: 'male' | 'female';
