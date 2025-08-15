@@ -6,9 +6,9 @@ buildscript {
     mavenCentral()
   }
   dependencies {
-    classpath('com.android.tools.build:gradle:8.5.2')
+    classpath('com.android.tools.build:gradle:8.2.2')
     classpath('com.facebook.react:react-native-gradle-plugin')
-    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0')
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22')
   }
 }
 
@@ -40,6 +40,13 @@ allprojects {
   configurations.all {
     // Simply exclude the problematic JFrog group entirely
     exclude group: 'org.jfrog.buildinfo'
+    
+    // Force consistent Kotlin versions to prevent API mismatches
+    resolutionStrategy.force(
+      'org.jetbrains.kotlin:kotlin-stdlib:1.9.22',
+      'org.jetbrains.kotlin:kotlin-stdlib-common:1.9.22',
+      'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22'
+    )
   }
 }
 
