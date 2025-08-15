@@ -49,5 +49,5 @@ allprojects {
   }
 }
 
-apply plugin: "expo-root-project"
+// remove unknown Expo plugin that is not available in EAS environment
 apply plugin: "com.facebook.react.rootproject"
