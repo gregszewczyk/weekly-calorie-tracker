@@ -1,6 +1,7 @@
 plugins {
     id "com.android.application"
     id "org.jetbrains.kotlin.android"
+    id "com.facebook.react"
 }
 
 // Ensure Android SDK levels are set
@@ -26,6 +27,11 @@ def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInRelea
  * this variant is about 6MiB larger per architecture than default.
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
+
+/**
+ * Use Hermes JavaScript engine
+ */
+def hermesEnabled = (findProperty('expo.jsEngine') ?: 'hermes') == 'hermes'
 
 android {
     buildToolsVersion "34.0.0"
@@ -92,9 +98,6 @@ android {
 }
 
 dependencies {
-    // The version of react-native is set by the React Native Gradle Plugin
-    implementation("com.facebook.react:react-android")
-
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
@@ -113,10 +116,17 @@ dependencies {
         }
     }
 
-    if (hermesEnabled.toBoolean()) {
-        implementation("com.facebook.react:hermes-android")
+    if (hermesEnabled) {
+        // Hermes dependency will be provided by Expo
     } else {
         implementation jscFlavor
     }
+}
+
+react {
+    // Use bundled version of React Native from node_modules
+    root = file("$projectRoot/")
+    reactNativeDir = file("$projectRoot/node_modules/react-native")
+    codegenDir = file("$projectRoot/node_modules/@react-native/codegen")
 }
 
