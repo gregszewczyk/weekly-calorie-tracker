@@ -1,13 +1,17 @@
 pluginManagement {
+  def reactNativeGradlePlugin = new File(
+    providers.exec {
+      workingDir(rootDir)
+      commandLine("node", "--print", "require.resolve('@react-native/gradle-plugin/package.json')")
+    }.standardOutput.asText.get().trim()
+  ).getParentFile().absolutePath
+  
   repositories {
-    gradlePluginPortal() // ensures plugins published to the Gradle Plugin Portal are found
-    mavenCentral()       // react-native-gradle-plugin is usually on Maven Central
-    google()             // Android artifacts
+    gradlePluginPortal()
+    google()
+    mavenCentral()
   }
-  plugins {
-    id("com.facebook.react") version "0.76.9"
-    id("com.facebook.react.settings") version "0.76.9"
-  }
+  includeBuild(reactNativeGradlePlugin)
 }
 
 plugins {
