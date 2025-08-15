@@ -36,7 +36,7 @@ android {
     buildToolsVersion "34.0.0"
     compileSdk 34
 
-    namespace "com.weeklycalorietracker"
+    namespace "com.anonymous.weeklycalorietracker"
     
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -48,13 +48,14 @@ android {
     }
     
     defaultConfig {
-        applicationId "com.weeklycalorietracker"
+        applicationId "com.anonymous.weeklycalorietracker"
         minSdkVersion 24
         targetSdkVersion 34
         versionCode 1
         versionName "1.0"
         
         buildConfigField("boolean", "IS_NEW_ARCHITECTURE_ENABLED", (findProperty("newArchEnabled") ?: "false").toString())
+        buildConfigField("boolean", "IS_HERMES_ENABLED", (findProperty("hermesEnabled") ?: "true").toString())
     }
     signingConfigs {
         debug {
@@ -113,31 +114,8 @@ android {
 }
 
 dependencies {
+    // Let Expo autolinking handle all React Native and Expo dependencies
+    // Only add minimal required dependencies that Expo doesn't provide
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'androidx.core:core-ktx:1.12.0'
-    
-    def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
-    def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
-    def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
-
-    // Fresco baseline version compatible with RN 0.76
-    def frescoVersion = "3.4.0"
-
-    if (isGifEnabled) {
-        implementation("com.facebook.fresco:animated-gif:${frescoVersion}")
-    }
-
-    if (isWebpEnabled) {
-        implementation("com.facebook.fresco:webpsupport:${frescoVersion}")
-        if (isWebpAnimatedEnabled) {
-            implementation("com.facebook.fresco:animated-webp:${frescoVersion}")
-        }
-    }
-
-    if (hermesEnabled) {
-        // Hermes dependency will be provided by Expo
-    } else {
-        implementation jscFlavor
-    }
 }
 
