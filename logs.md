@@ -1,10 +1,10 @@
-Running 'gradlew :app:assembleRelease' in /home/expo/workingdir/build/android
+Running 'gradlew :app:bundleRelease' in /home/expo/workingdir/build/android
 Downloading https://services.gradle.org/distributions/gradle-8.6-bin.zip
 10%
-20%.
-30%.
+20%
+30%
 40%.
-50%.
+50%
 60%.
 70%
 80%.
@@ -13,8 +13,8 @@ Downloading https://services.gradle.org/distributions/gradle-8.6-bin.zip
 Welcome to Gradle 8.6!
 Here are the highlights of this release:
  - Configurable encryption key for configuration cache
-- Build init improvements
- - Build authoring improvements
+ - Build init improvements
+- Build authoring improvements
 For more details see https://docs.gradle.org/8.6/release-notes.html
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.6/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build
@@ -35,19 +35,21 @@ Path for java installation '/usr/lib/jvm/openjdk-17' (Common Linux Locations) do
 FAILURE: Build failed with an exception.
 * What went wrong:
 A problem occurred configuring root project 'WeeklyCalorieTracker'.
-> Could not resolve all files for configuration ':classpath'.
-   > Could not find com.facebook.react:react-native-gradle-plugin:0.76.9.
+>
+Could not resolve all files for configuration ':classpath'.
+>
+Could not find com.facebook.react:react-native-gradle-plugin:0.76.9.
      Searched in the following locations:
        - http://maven.production.caches.eas-build.internal/artifactory/libs-release/com/facebook/react/react-native-gradle-plugin/0.76.9/react-native-gradle-plugin-0.76.9.pom
        - https://dl.google.com/dl/android/maven2/com/facebook/react/react-native-gradle-plugin/0.76.9/react-native-gradle-plugin-0.76.9.pom
        - https://repo.maven.apache.org/maven2/com/facebook/react/react-native-gradle-plugin/0.76.9/react-native-gradle-plugin-0.76.9.pom
      Required by:
-         project :
+project :
 * Try:
 > Run with --stacktrace option to get the stack trace.
 > Run with --info or --debug option to get more log output.
 > Run with --scan to get full insights.
 > Get more help at https://help.gradle.org.
-BUILD FAILED in 46s
+BUILD FAILED in 45s
 8 actionable tasks: 8 executed
 Error: Gradle build failed with unknown error. See logs for the "Run gradlew" phase for more information.
