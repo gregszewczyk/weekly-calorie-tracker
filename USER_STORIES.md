@@ -81,20 +81,23 @@
 - Create weight trend analysis service
 - Extend store with weight management
 
-### Story 1.2: Active Calories Sync
-**As a user, I want my workout calories automatically pulled from my watch**
+### Story 1.2: Active Calories Sync ⚠️ PARTIALLY COMPLETE
+**As a user, I want my workout calories automatically pulled from my watch for live banking**
 
 **Acceptance Criteria:**
-- [ ] Auto-sync yesterday's active calories from Garmin
+- [x] Real-time sync of today's active calories (Garmin implemented)
+- [ ] Real-time sync of today's active calories (Apple HealthKit) **MVP CRITICAL**
+- [ ] Real-time sync of today's active calories (Samsung Health) **MVP CRITICAL**
 - [ ] Manual input option as fallback
 - [ ] Workout type detection (rest/1 activity/2+ activities)
-- [ ] Calorie adjustment based on actual vs planned activity
-- [ ] Historical sync for missed days
+- [ ] Live calorie adjustment in banking system based on actual vs planned activity
 
 **Implementation Notes:**
-- Extend `GarminService` for daily sync
+- ✅ Garmin live sync implemented via `GarminProxyService`
+- ❌ Apple HealthKit integration needed for MVP
+- ❌ Samsung Health integration needed for MVP
 - Add workout categorization logic
-- Update `DailyCalorieData` with activity context
+- Integrate with live banking system for real-time adjustments
 
 ### Story 1.3: Simplified Calorie Logging ✅ COMPLETED
 **As a user, I want to quickly input my daily calories consumed**

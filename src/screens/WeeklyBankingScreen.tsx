@@ -482,7 +482,7 @@ const WeeklyBankingScreen: React.FC = () => {
                 </Text>
                 <View style={styles.comparisonDetails}>
                   <Text style={[styles.comparisonDetail, { color: theme.colors.text }]}>
-                    {formatNumber(bankStatus.remaining)} to distribute
+                    {formatNumber(bankStatus.remainingForFutureDays)} to distribute
                   </Text>
                   <Text style={[styles.comparisonDetail, { color: theme.colors.success }]}>
                     Flexible planning

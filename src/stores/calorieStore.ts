@@ -328,17 +328,20 @@ export const useCalorieStore = create<CalorieStore>()(
         
         // Use stored weekly allowance
         const weeklyAllowance = currentWeekGoal.currentWeekAllowance ?? currentWeekGoal.weeklyAllowance;
-        const remaining = weeklyAllowance - totalUsed;
+        const totalRemaining = weeklyAllowance - totalUsed;
         
-        // Calculate daily average for remaining days (excluding today)
+        // Calculate daily average for remaining days (excluding today's locked target)
         const lockedTarget = get().getLockedDailyTarget();
         const todayTarget = lockedTarget || 2450;
-        const dailyAverageForFuture = daysLeftExcludingToday > 0 ? remaining / daysLeftExcludingToday : 0;
+        
+        // For future days calculation, subtract today's target from total remaining
+        const remainingForFutureDays = totalRemaining - todayTarget;
+        const dailyAverageForFuture = daysLeftExcludingToday > 0 ? remainingForFutureDays / daysLeftExcludingToday : 0;
         
         // Simple projected outcome without complex redistribution logic
         const projectedOutcome: 'on-track' | 'over-budget' | 'under-budget' = 
           totalUsed > weeklyAllowance ? 'over-budget' : 
-          remaining < (weeklyAllowance * 0.1) ? 'under-budget' : 'on-track';
+          totalRemaining < (weeklyAllowance * 0.1) ? 'under-budget' : 'on-track';
         
         // Calculate averages
         const nonZeroDays = Math.max(7 - daysLeftIncludingToday + 1, 1);
@@ -355,7 +358,8 @@ export const useCalorieStore = create<CalorieStore>()(
           totalUsed,
           totalConsumed,
           totalBurned,
-          remaining,
+          remaining: totalRemaining, // Total remaining including today
+          remainingForFutureDays, // NEW: Remaining excluding today's locked target
           daysLeft: daysLeftIncludingToday,
           daysLeftExcludingToday,
           dailyAverage: dailyAverageForFuture,
@@ -1680,15 +1684,23 @@ export const useCalorieStore = create<CalorieStore>()(
         const dayData = get().weeklyData.find(data => data.date === targetDate);
         
         if (dayData?.lockedDailyTarget && dayData.targetLockedAt) {
-          // Check if the lock is from today (not stale from previous day)
           const lockDate = new Date(dayData.targetLockedAt).toDateString();
           const currentDate = new Date().toDateString();
+          const targetDateObj = new Date(targetDate).toDateString();
           
-          if (lockDate === currentDate) {
-            return dayData.lockedDailyTarget;
+          // Only check for stale locks if we're asking for TODAY's target
+          // Past days should keep their locked targets permanently
+          if (targetDateObj === currentDate) {
+            // For today, check if lock is fresh (from today)
+            if (lockDate === currentDate) {
+              return dayData.lockedDailyTarget;
+            } else {
+              console.log(`🔓 [getLockedDailyTarget] Stale lock detected for today ${targetDate}, ignoring`);
+              return null;
+            }
           } else {
-            console.log(`🔓 [getLockedDailyTarget] Stale lock detected for ${targetDate}, ignoring`);
-            return null;
+            // For past days, always return the locked target
+            return dayData.lockedDailyTarget;
           }
         }
         

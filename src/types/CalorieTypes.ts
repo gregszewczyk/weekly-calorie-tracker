@@ -166,7 +166,8 @@ export interface CalorieBankStatus {
   totalUsed: number; // Net calories (consumed - burned)
   totalConsumed: number; // Total food intake
   totalBurned: number; // Total calories burned from activity
-  remaining: number;
+  remaining: number; // Total remaining including today's target
+  remainingForFutureDays: number; // Remaining excluding today's locked target
   daysLeft: number; // Days remaining including today
   daysLeftExcludingToday: number; // Future days only (for rest of week planning)
   dailyAverage: number; // Average for remaining days excluding today
