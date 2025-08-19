@@ -320,10 +320,9 @@ const AppNavigator: React.FC = () => {
       return;
     }
     
-    // For basic users, use a standard estimate
-    console.log('🔧 [AppNavigator] Creating weekly goal for basic user');
-    const basicTDEE = 2000;
-    createPartialWeekGoal(basicTDEE, config, setWeeklyGoal, 'Basic TDEE estimate');
+    // For basic users, don't create temporary goal - they should go through nutrition recommendations first
+    console.log('🔧 [AppNavigator] Skipping temporary goal creation for basic user - will be created after AI nutrition recommendations');
+    // Don't create a goal here - let the nutrition recommendation process handle it
   };
 
   // Wait for Zustand to rehydrate before determining initial route

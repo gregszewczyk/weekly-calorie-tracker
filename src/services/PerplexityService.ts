@@ -223,11 +223,13 @@ export class PerplexityService {
       }
 
       console.log('🤖 [PerplexityService] Building nutrition prompt...');
+      const systemprompt = this.buildSystemPrompt(request);
       const prompt = this.buildNutritionPrompt(request);
+
       console.log('🤖 [PerplexityService] Prompt length:', prompt.length, 'chars');
       
       console.log('🤖 [PerplexityService] Making API request to Perplexity...');
-      const response = await this.makeAPIRequest(prompt);
+      const response = await this.makeAPIRequest(prompt, systemprompt);
       console.log('🤖 [PerplexityService] API response received:', {
         hasResponse: !!response,
         hasChoices: !!(response?.choices),
@@ -251,13 +253,15 @@ export class PerplexityService {
    * Get sport-specific nutrition guidance
    */
   async getSportSpecificGuidance(sport: SportType, trainingPhase: string): Promise<string> {
+         const systemprompt = "# SPORT-SPECIFIC NUTRITION EXPERT\n\n## EXPERTISE CONSTRAINTS\n- Evidence-based recommendations only\n- Sport-specific metabolic demands\n- Training phase periodization principles\n- Practical implementation focus\n- Performance optimization priority\n\n## CORE TASK\nProvide comprehensive sport-specific nutrition guidance tailored to training phase and sport demands.\n\n## MANDATORY OUTPUT STRUCTURE\n\n**SPORT OVERVIEW:**\nENERGY DEMANDS: [High/Moderate/Low intensity classification]\nPRIMARY SYSTEMS: [Energy systems utilized - aerobic/anaerobic/phosphocreatine]\nKEY NUTRIENTS: [Critical nutrients for this sport]\nTRAINING PHASE FOCUS: [Specific adaptations for current phase]\n\n**ENERGY & MACRO REQUIREMENTS:**\n\n### Daily Targets\n- Total Energy: X-Y kcal/kg bodyweight\n- Carbohydrates: X-Yg/kg bodyweight (X-Y% of total calories)\n- Protein: X-Yg/kg bodyweight (X-Y% of total calories)\n- Fats: X-Yg/kg bodyweight (X-Y% of total calories)\n\n### Training Phase Adjustments\n- [Specific macro adjustments for current training phase]\n- [Caloric modifications based on training volume/intensity]\n- [Periodization considerations]\n\n**TRAINING SESSION NUTRITION:**\n\n### Pre-Training (1-4 hours before)\n- Timing: X hours before\n- Carbohydrates: Xg\n- Protein: Xg\n- Fluids: X ml\n- Specific foods: [Examples]\n\n### During Training (if >90 minutes)\n- Carbohydrates: Xg/hour\n- Fluids: X ml/hour\n- Electrolytes: [Specific needs]\n- Products: [Specific recommendations]\n\n### Post-Training (within 2 hours)\n- Carbohydrates: Xg\n- Protein: Xg\n- Fluids: X ml per kg bodyweight lost\n- Timing priorities: [Recovery timeline]\n\n**RECOVERY & ADAPTATION:**\n- Sleep nutrition: [Evening/morning strategies]\n- Anti-inflammatory foods: [Specific recommendations]\n- Micronutrient focus: [Key vitamins/minerals]\n- Hydration protocols: [Daily targets and strategies]\n- Rest day nutrition: [Modifications for non-training days]\n\n**COMPETITION PREPARATION:**\n\n### 3-7 Days Before\n- [Carb loading protocols if applicable]\n- [Training taper nutrition adjustments]\n- [Digestive system preparation]\n\n### Day of Competition\n- Pre-event meal: [Timing and composition]\n- Warm-up nutrition: [If needed]\n- During event: [Sport-specific strategies]\n- Between events: [For multi-event competitions]\n\n**COMMON CHALLENGES & SOLUTIONS:**\n1. [Most frequent nutritional issue for this sport]\n   Solution: [Practical approach]\n\n2. [Second common challenge]\n   Solution: [Practical approach]\n\n3. [Third common challenge]\n   Solution: [Practical approach]\n\n**PERFORMANCE OPTIMIZATION:**\n- Ergogenic aids: [Evidence-based supplements]\n- Timing strategies: [Nutrient timing specifics]\n- Body composition: [Sport-specific considerations]\n- Seasonal periodization: [Annual nutrition planning]\n\n**PRACTICAL IMPLEMENTATION:**\n- Meal prep strategies: [Sport-specific approaches]\n- Travel nutrition: [Competition/training travel]\n- Budget considerations: [Cost-effective options]\n- Monitoring metrics: [Key indicators to track]\n\n## FORMATTING RULES\n- Use specific quantities with ranges (X-Y format)\n- Include practical food examples in each section\n- Provide timing specifics (hours, minutes)\n- Focus on actionable recommendations\n- Cite evidence level when relevant (High/Moderate/Limited evidence)\n- Address both training and competition scenarios\n- Include troubleshooting for common issues"
+
     try {
       if (!isServiceConfigured('perplexity')) {
         return this.getFallbackSportGuidance(sport);
       }
 
       const prompt = this.buildSportSpecificPrompt(sport, trainingPhase);
-      const response = await this.makeAPIRequest(prompt);
+      const response = await this.makeAPIRequest(prompt, systemprompt);
       
       return response.choices[0]?.message.content || this.getFallbackSportGuidance(sport);
     } catch (error) {
@@ -276,7 +280,8 @@ export class PerplexityService {
       }
       
       const testPrompt = "What is sports nutrition in one sentence?";
-      await this.makeAPIRequest(testPrompt);
+      const systemPrompt = "sports nutrition expert";
+      await this.makeAPIRequest(testPrompt, systemPrompt);
       return true;
     } catch (error) {
       console.error('Perplexity API connection validation failed:', error);
@@ -285,6 +290,15 @@ export class PerplexityService {
   }
 
   // Private Methods
+
+  public buildSystemPrompt(request: NutritionCalculationRequest): string {
+    const isBasicUser = !request.currentGoal.performanceMode;
+    if (isBasicUser) {
+      return "# NUTRITION GOAL PLANNING EXPERT\n\n## SAFETY CONSTRAINTS\n- Female minimum: 1200 kcal/day\n- Male minimum: 1500 kcal/day\n- Sport-appropriate protein targets\n- Safe deficit limits based on user profile\n\n## CORE TASK\nAnalyze goal feasibility and provide exactly 3 approaches: CONSERVATIVE, STANDARD, AGGRESSIVE.\n\n## DECISION LOGIC\n1. Can goal be achieved in specified timeframe?\n2. If YES: Create 3 approaches for actual goal\n3. If NO: Suggest realistic goal + 3 approaches for that\n4. CONSERVATIVE approach prioritized if achievable within timeline\n5. If CONSERVATIVE exceeds timeline, minimize overage (1-2 weeks max, not 10+ weeks)\n6. Open-ended goals: Make CONSERVATIVE as easy as possible\n\n## MANDATORY OUTPUT STRUCTURE\n\n**GOAL FEASIBILITY ASSESSMENT:**\nACHIEVABLE: [YES/NO]\nANALYSIS: [2-3 sentences explaining feasibility]\nKEY INSIGHTS:\n- [Profile/training insight]\n- [Approach/timeline insight] \n- [Performance/nutrition insight]\nCONFIDENCE: [HIGH/MEDIUM/LOW]\nWARNINGS: [Concerns or \"None\"]\n\n**RECOMMENDED APPROACHES:**\n\n### CONSERVATIVE APPROACH: X kcal/day (X% deficit)\n- Daily Calories: X kcal\n- Weekly Weight Change Rate: -X kg/week\n- Timeline Assessment: At X kg/week, ~X weeks needed\n- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)\n- Training days: +Xg carbs, Rest days: -Xg carbs\n- Weekly deficit: X kcal\n\n### STANDARD APPROACH: X kcal/day (X% deficit)\n- Daily Calories: X kcal\n- Weekly Weight Change Rate: -X kg/week\n- Timeline Assessment: At X kg/week, ~X weeks needed\n- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)\n- Training days: +Xg carbs, Rest days: -Xg carbs\n- Weekly deficit: X kcal\n\n### AGGRESSIVE APPROACH: X kcal/day (X% deficit)\n- Daily Calories: X kcal\n- Weekly Weight Change Rate: -X kg/week\n- Timeline Assessment: At X kg/week, ~X weeks needed\n- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)\n- Training days: +Xg carbs, Rest days: -Xg carbs\n- Weekly deficit: X kcal\n\n**MONITORING:**\nTrack: weight, performance metrics, energy levels. Adjust if weekly weight loss >X% or <X%.\n\n## FORMATTING RULES\n- Timeline MUST be exact numbers: \"8 weeks\" not \"Early October\"\n- Each approach must have DIFFERENT week calculations\n- Calculate specific weeks for each approach\n- Include both rate and timeline for each approach\n- Base all calculations on provided TDEE value";
+    } else {
+      return "# ATHLETE NUTRITION PLANNING EXPERT\n\n## SAFETY CONSTRAINTS\n- Female minimum: 1200 kcal/day\n- Male minimum: 1500 kcal/day\n- Sport-specific protein requirements\n- Performance-safe deficit limits\n- Maintain training capacity\n\n## CORE TASK\nAnalyze goal feasibility and provide exactly 3 approaches: CONSERVATIVE, STANDARD (recommended), AGGRESSIVE.\n\n## DECISION LOGIC\n1. Can goal be achieved in specified timeframe?\n2. If YES: Create 3 approaches for actual goal\n3. If NO: Suggest realistic goal + 3 approaches for that\n4. Prioritize performance maintenance\n5. STANDARD approach is default recommendation for athletes\n6. Timeline calculations: Conservative = longer, Aggressive = shorter\n\n## MANDATORY OUTPUT STRUCTURE\n\n**GOAL FEASIBILITY ASSESSMENT:**\nACHIEVABLE: [YES/NO]\nANALYSIS: [2-3 sentences explaining feasibility]\nKEY INSIGHTS:\n- [Profile/training insight]\n- [Performance/timeline insight]\n- [Nutrition strategy insight]\nCONFIDENCE: [HIGH/MEDIUM/LOW]\nWARNINGS: [Concerns or \"None\"]\n\n**RECOMMENDED APPROACHES:**\n\n### CONSERVATIVE APPROACH: X kcal/day (X% deficit)\n- Daily Calories: X kcal\n- Weekly Weight Change Rate: -X kg/week\n- Timeline Assessment: At X kg/week, ~X weeks needed\n- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)\n- Training days: +Xg carbs, Rest days: -Xg carbs\n- Weekly deficit: X kcal\n\n### STANDARD APPROACH: X kcal/day (X% deficit) ★ RECOMMENDED\n- Daily Calories: X kcal\n- Weekly Weight Change Rate: -X kg/week\n- Timeline Assessment: At X kg/week, ~X weeks needed\n- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)\n- Training days: +Xg carbs, Rest days: -Xg carbs\n- Weekly deficit: X kcal\n\n### AGGRESSIVE APPROACH: X kcal/day (X% deficit)\n- Daily Calories: X kcal\n- Weekly Weight Change Rate: -X kg/week\n- Timeline Assessment: At X kg/week, ~X weeks needed\n- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)\n- Training days: +Xg carbs, Rest days: -Xg carbs\n- Weekly deficit: X kcal\n\n**SPORT-SPECIFIC NUTRITION:**\nPre-workout: Xg carbs + Xg protein\nPost-workout: Xg carbs + Xg protein\nHydration: X liters/day\n\n**SUPPLEMENTS:**\nCreatine: Xg/day\nProtein powder: as needed\nOthers: [specific recommendations]\n\n**MONITORING:**\nTrack: weight, performance metrics, energy levels. Adjust if weekly weight loss >X% or <X%.\n\n## FORMATTING RULES\n- Timeline MUST be exact numbers: \"8 weeks\" not \"Early October\"\n- Each approach must have DIFFERENT week calculations\n- Conservative = longest timeline, Aggressive = shortest timeline\n- Include both rate and timeline for each approach\n- STANDARD approach is marked as recommended for athletes\n- Base all calculations on provided TDEE value\n- Sport name will be inserted dynamically in output header"
+    }
+  }
 
   private buildNutritionPrompt(request: NutritionCalculationRequest): string {
     // Determine user type and route to appropriate prompt
@@ -300,6 +314,7 @@ export class PerplexityService {
       return this.buildAthletePrompt(request);
     }
   }
+
 
   private getUserCategory(request: NutritionCalculationRequest): 'basic' | 'athlete' {
     return request.currentGoal.performanceMode ? 'athlete' : 'basic';
@@ -536,81 +551,86 @@ ${historicalInfo}
 
 Preference Level: ${preferenceLevel}
 
-CRITICAL SAFETY RULES:
-- All recommendations must be above safe minimum (1200 kcal/day for females, 1500 kcal/day for males)
-- Determine appropriate protein intake based on user's sport and goals
-- Determine safe maximum deficit based on user's profile and goals
-
-TASK: 
-1. Analyze if user's goal is achievable within their specified timeframe
-2. If YES: Provide 3 approaches (conservative/standard/aggressive) for their actual goal
-3. If NO: Suggest what IS achievable in timeframe + provide 3 approaches for that realistic goal
-
 USER'S SELECTED BASELINE:
 - TDEE: ${selectedTDEEValue} kcal/day (from ${tdeeMethodName.toUpperCase()} method)
 - Timeline: ${currentGoal.targetDate ? 'Target date: ' + currentGoal.targetDate : 'Open-ended goal'}
 
 USER'S TARGET OUTCOME:
 - Weight Goals: ${currentGoal.targetGoals?.weight ? `Current: ${currentGoal.targetGoals.weight.current}kg → Target: ${currentGoal.targetGoals.weight.target}kg` : 'None specified'}
+`;
 
-REQUIRED OUTPUT FORMAT:
+// CRITICAL SAFETY RULES:
+// - All recommendations must be above safe minimum (1200 kcal/day for females, 1500 kcal/day for males)
+// - Determine appropriate protein intake based on user's sport and goals
+// - Determine safe maximum deficit based on user's profile and goals
 
-**GOAL FEASIBILITY ASSESSMENT:**
-ACHIEVABLE: [YES/NO]
-ANALYSIS: [2-3 sentences explaining why the goal is or isn't achievable within the timeframe]
-KEY INSIGHTS:
-- [Key insight about user's profile, training, or goals]
-- [Another key insight about their approach or timeline]
-- [Third insight about performance impact or nutrition strategy]
-CONFIDENCE: [HIGH/MEDIUM/LOW - based on data quality and goal complexity]
-WARNINGS: [Any concerns about the approach, timeline, or potential issues - if none, write "None"]
 
-**RECOMMENDED APPROACHES:**
+// **HARD CONSTRAINT CHECK:**
+// 1.All recommendations should aim for goal achievement within the user's specified timeline
+// 2.If CONSERVATIVE approach can achieve goal within timeline, prioritize it
+// 3.If CONSERVATIVE approach cannot achieve goal within timeline it should be as close as possible to the goal for example extra 1-2 weeks not extra 10 weeks
+// 4.If Open-ended goal, CONSERVATIVE should prioritize making hitting the goal as easy as possible
 
-### CONSERVATIVE APPROACH: X kcal/day (X% deficit from ${selectedTDEEValue} TDEE)
-- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)
-- Training days: +Xg carbs, Rest days: -Xg carbs
-- Weekly deficit: X kcal, Timeline: X weeks (be specific - calculate exact weeks or days)
+// TASK: 
+// 1. Analyze if user's goal is achievable within their specified timeframe
+// 2. If YES: Provide 3 approaches (conservative/standard/aggressive) for their actual goal
+// 3. If NO: Suggest what IS achievable in timeframe + provide 3 approaches for that realistic goal
 
-### STANDARD APPROACH: X kcal/day (X% deficit from ${selectedTDEEValue} TDEE) ★ RECOMMENDED
-- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)
-- Training days: +Xg carbs, Rest days: -Xg carbs
-- Weekly deficit: X kcal, Timeline: X weeks (be specific - calculate exact weeks or days)
+// USER'S SELECTED BASELINE:
+// - TDEE: ${selectedTDEEValue} kcal/day (from ${tdeeMethodName.toUpperCase()} method)
+// - Timeline: ${currentGoal.targetDate ? 'Target date: ' + currentGoal.targetDate : 'Open-ended goal'}
 
-### AGGRESSIVE APPROACH: X kcal/day (X% deficit from ${selectedTDEEValue} TDEE)
-- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)
-- Training days: +Xg carbs, Rest days: -Xg carbs
-- Weekly deficit: X kcal, Timeline: X weeks (be specific - calculate exact weeks or days)
+// USER'S TARGET OUTCOME:
+// - Weight Goals: ${currentGoal.targetGoals?.weight ? `Current: ${currentGoal.targetGoals.weight.current}kg → Target: ${currentGoal.targetGoals.weight.target}kg` : 'None specified'}
 
-**MONITORING:** 
-Track: weight, performance metrics, energy levels. Adjust if weekly weight loss >X% or <X%.
+// REQUIRED OUTPUT FORMAT:
 
-CRITICAL FORMATTING REQUIREMENTS:
-- Timeline MUST be expressed as exact numbers: "Timeline: 8 weeks" or "Timeline: 12 weeks" 
-- ALWAYS include "X weeks needed" in timeline assessment for each approach
-- Calculate specific weeks for each approach - they should be DIFFERENT
-- Conservative should take LONGER (more weeks), Aggressive should be FASTER (fewer weeks) - but no more than 2-3 weeks difference
-- Aim of all 3 approaches is to achieve the user's goal in a realistic, healthy way
-- For each approach, include both "At X kg/week, ~Y weeks needed" in timeline assessment
-- NEVER use vague terms like "Early October" or "Mid-November" - always specify weeks
+// **GOAL FEASIBILITY ASSESSMENT:**
+// ACHIEVABLE: [YES/NO]
+// ANALYSIS: [2-3 sentences explaining why the goal is or isn't achievable within the timeframe]
+// KEY INSIGHTS:
+// - [Key insight about user's profile, training, or goals]
+// - [Another key insight about their approach or timeline]
+// - [Third insight about performance impact or nutrition strategy]
+// CONFIDENCE: [HIGH/MEDIUM/LOW - based on data quality and goal complexity]
+// WARNINGS: [Any concerns about the approach, timeline, or potential issues - if none, write "None"]
 
-EXAMPLE FORMAT FOR EACH APPROACH:
-### CONSERVATIVE APPROACH
-- Daily Calories: 2400 kcal
-- Weekly Weight Loss Rate: 0.6 kg/week  
-- Timeline Assessment: At 0.6 kg/week, ~18 weeks needed
+// **RECOMMENDED APPROACHES:**
 
-### STANDARD APPROACH  
-- Daily Calories: 2200 kcal
-- Weekly Weight Loss Rate: 0.8 kg/week
-- Timeline Assessment: At 0.8 kg/week, ~14 weeks needed
+// ### CONSERVATIVE APPROACH: X kcal/day (X% deficit from ${selectedTDEEValue} TDEE)
+// - Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)
+// - Training days: +Xg carbs, Rest days: -Xg carbs
+// - Weekly deficit: X kcal, Timeline: X weeks (be specific - calculate exact weeks or days)
 
-### AGGRESSIVE APPROACH
-- Daily Calories: 2000 kcal
-- Weekly Weight Loss Rate: 1.0 kg/week
-- Timeline Assessment: At 1.0 kg/week, ~11 weeks needed
+// ### STANDARD APPROACH: X kcal/day (X% deficit from ${selectedTDEEValue} TDEE) 
+// - Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)
+// - Training days: +Xg carbs, Rest days: -Xg carbs
+// - Weekly deficit: X kcal, Timeline: X weeks (be specific - calculate exact weeks or days)
 
-Base all calculations on user's selected TDEE of ${selectedTDEEValue} kcal/day. Calculate appropriate deficits for their specific goals and timeline.`;
+// ### AGGRESSIVE APPROACH: X kcal/day (X% deficit from ${selectedTDEEValue} TDEE)
+// - Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)
+// - Training days: +Xg carbs, Rest days: -Xg carbs
+// - Weekly deficit: X kcal, Timeline: X weeks (be specific - calculate exact weeks or days)
+
+// **MONITORING:** 
+// Track: weight, performance metrics, energy levels. Adjust if weekly weight loss >X% or <X%.
+
+// CRITICAL FORMATTING REQUIREMENTS:
+// - Timeline MUST be expressed as exact numbers: "Timeline: 8 weeks" or "Timeline: 12 weeks" 
+// - ALWAYS include "X weeks needed" in timeline assessment for each approach
+// - Calculate specific weeks for each approach - they should be DIFFERENT
+// - For each approach, include both "At X kg/week, ~Y weeks needed" in timeline assessment  
+// - NEVER use vague terms like "Early October" or "Mid-November" - always specify weeks
+
+
+// REQUIRED FORMAT FOR EACH APPROACH:
+// ### NAME OF THE APPROACH + APPROACH
+// - Daily Calories: X kcal
+// - Weekly Weight Change Rate: -X kg/week  
+// - Timeline Assessment: At X kg/week, ~X weeks needed
+
+
+//Base all calculations on user's selected TDEE of ${selectedTDEEValue} kcal/day. Calculate appropriate deficits for their specific goals and timeline.`;
   }
 
   private buildAthletePrompt(request: NutritionCalculationRequest): string {
@@ -1072,30 +1092,53 @@ IMPORTANT: These Apple Health insights provide real-time physiological feedback 
    * Build sport-specific prompt
    */
   private buildSportSpecificPrompt(sport: SportType, trainingPhase: string): string {
-    return `As an expert sports nutritionist, provide specific nutrition guidance for ${sport} athletes in the ${trainingPhase} training phase.
+    return `SPORT: ${sport.toUpperCase()}
+TRAINING PHASE: ${trainingPhase.toUpperCase()}
 
-Include:
-1. Sport-specific energy and macro requirements
-2. Training session nutrition strategies
-3. Recovery and adaptation nutrition
-4. Competition/event preparation
-5. Common nutritional challenges in ${sport}
-6. Performance-enhancing nutrition strategies
-
-Keep recommendations evidence-based and practical.`;
+ADDITIONAL CONTEXT:
+- Focus on evidence-based recommendations
+- Prioritize practical implementation
+- Address sport-specific metabolic demands
+- Consider training phase periodization needs
+- Include both training and competition scenarios
+`;
   }
 
-  private async makeAPIRequest(prompt: string): Promise<PerplexityAPIResponse> {
+  private async makeAPIRequest(prompt: string, systemprompt: string): Promise<PerplexityAPIResponse> {
     // Use configuration from apiConfig
     const requestConfig = API_CONFIG.perplexity.REQUEST_DEFAULTS;
     
-    const requestBody: PerplexityRequest = {
-      model: API_CONFIG.perplexity.DEFAULT_MODEL,
+    // const requestBody: PerplexityRequest = {
+    //   model: API_CONFIG.perplexity.MODELS.SONAR_REASONING,
+    //   messages: [
+    //     {
+    //       role: 'system',
+    //       content: 'You are a nutrition expert. You MUST respond with ONLY the requested structured format. Never show thinking, analysis, or explanations. Just provide the exact format requested with calculated values.'
+    //     },
+    //     {
+    //       role: 'user',
+    //       content: prompt
+    //     }
+    //   ],
+    //   max_tokens: requestConfig.max_tokens,
+    //   temperature: requestConfig.temperature,
+    //   top_p: requestConfig.top_p,
+    //   search_domain_filter: [...requestConfig.search_domain_filter],
+    //   return_citations: requestConfig.return_citations,
+    //   search_recency_filter: requestConfig.search_recency_filter,
+    //   top_k: requestConfig.top_k,
+    //   stream: requestConfig.stream,
+    //   presence_penalty: requestConfig.presence_penalty,
+    //   frequency_penalty: requestConfig.frequency_penalty
+    // };
+
+        const requestBody: PerplexityRequest = {
+      model: API_CONFIG.perplexity.MODELS.SONAR_REASONING,
       messages: [
         {
-          role: 'system',
-          content: 'You are a nutrition expert. You MUST respond with ONLY the requested structured format. Never show thinking, analysis, or explanations. Just provide the exact format requested with calculated values.'
-        },
+  "role": "system",
+  "content": systemprompt 
+},
         {
           role: 'user',
           content: prompt
@@ -1669,7 +1712,13 @@ Keep recommendations evidence-based and practical.`;
 
     // Timeline parsing patterns to extract estimated completion dates/weeks
     const timelinePatterns = [
-      // Match actual AI response format: "at~1 Kg/Week ,~10 Weeks Needed" (flexible spacing)
+      // Match exact aggressive format: "At~1 .13kg /week ,~9weeks needed" 
+      { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?at\s*~?\d+\s*\.\s*\d+\s*kg\s*\/\s*week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks\s*needed/i },
+      // Match "At ~0.85 kg/week, ~12 weeks needed" format (standard working format)
+      { name: 'conservative', regex: /conservative\s+approach[\s\S]*?at\s*~?[\d\s.]+\s*kg\s*\/\s*week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
+      { name: 'standard', regex: /standard\s+approach[\s\S]*?at\s*~?[\d\s.]+\s*kg\s*\/\s*week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
+      { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?at\s*~?[\d\s.]+\s*kg\s*\/\s*week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
+      // Fallback: Match original format "at~1 Kg/Week ,~10 Weeks Needed" (no space between kg/week)
       { name: 'conservative', regex: /conservative\s+approach[\s\S]*?at\s*~?[\d.]+\s*kg\/week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
       { name: 'standard', regex: /standard\s+approach[\s\S]*?at\s*~?[\d.]+\s*kg\/week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
       { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?at\s*~?[\d.]+\s*kg\/week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
@@ -1732,6 +1781,7 @@ Keep recommendations evidence-based and practical.`;
     for (const pattern of timelinePatterns) {
       const match = cleanContent.match(pattern.regex);
       if (match && !timelineMatches[pattern.name]) {
+        console.log(`📅 [PerplexityService] Timeline pattern matched for ${pattern.name}:`, match[0].substring(0, 100) + '...');
         timelineMatches[pattern.name] = match[1]; // Keep original format like "8-10" or "9"
       }
     }

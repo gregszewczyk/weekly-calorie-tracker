@@ -78,7 +78,7 @@ export const PERPLEXITY_CONFIG = {
   
   // Request Configuration
   REQUEST_DEFAULTS: {
-    max_tokens: 800, // Reduced further - structured output only
+    max_tokens: 4000, // Reduced further - structured output only
     temperature: 0, // Deterministic output for consistent parsing
     top_p: 0.9,
     top_k: 0,
