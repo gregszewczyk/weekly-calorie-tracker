@@ -43,6 +43,7 @@ const WeeklyBankingScreen: React.FC = () => {
     getTodaysData,
     getBankingPlan,
     isBankingAvailable,
+    forceWeeklyReset,
     weeklyData // Subscribe to weeklyData changes to trigger re-render
   } = useCalorieStore();
   const { theme } = useTheme();
@@ -425,13 +426,35 @@ const WeeklyBankingScreen: React.FC = () => {
               <Text style={[styles.heroProgressText, { color: theme.colors.text }]}>
                 {formatNumber(bankStatus.totalUsed)} / {formatNumber(bankStatus.weeklyAllowance)} used
               </Text>
-              <TouchableOpacity 
-                style={styles.infoIconHero}
-                onPress={() => setShowUsedBreakdown(true)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="information-circle-outline" size={16} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
+              <View style={styles.heroIconsContainer}>
+                <TouchableOpacity 
+                  style={styles.infoIconHero}
+                  onPress={() => setShowUsedBreakdown(true)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="information-circle-outline" size={16} color={theme.colors.textSecondary} />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.infoIconHero, { marginLeft: 8 }]}
+                  onPress={() => {
+                    Alert.alert(
+                      'Reset Weekly Allowance',
+                      'This will reset your weekly allowance and apply any carryover from last week. Continue?',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { 
+                          text: 'Reset', 
+                          style: 'destructive',
+                          onPress: () => forceWeeklyReset()
+                        }
+                      ]
+                    );
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="refresh-circle-outline" size={16} color={theme.colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -1309,6 +1332,10 @@ const styles = StyleSheet.create({
   },
   infoIconHero: {
     marginLeft: 8,
+  },
+  heroIconsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   statusMessage: {
     fontSize: 14,

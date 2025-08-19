@@ -90,6 +90,7 @@ interface CalorieStore {
   deleteMeal: (mealId: string, date: string) => void;
   editMeal: (mealId: string, date: string, updatedMeal: Partial<MealEntry>) => void;
   initializeWeek: (weekStartDate?: Date) => void;
+  forceWeeklyReset: () => void;
   clearError: () => void;
   
   // NEW: Weekly balance carryover
@@ -311,8 +312,18 @@ export const useCalorieStore = create<CalorieStore>()(
         if (!state.goalConfiguration?.startDate) return 1;
         
         const startDate = new Date(state.goalConfiguration.startDate);
-        const daysElapsed = Math.floor((Date.now() - startDate.getTime()) / (24 * 60 * 60 * 1000));
-        return Math.floor(daysElapsed / 7) + 1; // Week 1 = days 0-6, Week 2 = days 7-13, etc.
+        const today = new Date();
+        
+        // Find the Monday of the week when the goal started
+        const goalStartMonday = startOfWeek(startDate, { weekStartsOn: 1 });
+        
+        // Find the Monday of the current week  
+        const currentMonday = startOfWeek(today, { weekStartsOn: 1 });
+        
+        // Calculate the number of weeks (Mondays) between them
+        const weeksDiff = Math.floor((currentMonday.getTime() - goalStartMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+        
+        return weeksDiff + 1; // Week 1 for first week, Week 2 for second Monday, etc.
       },
 
       getCalorieBankStatus: () => {
@@ -1071,6 +1082,52 @@ export const useCalorieStore = create<CalorieStore>()(
             }));
           }
         }
+      },
+
+      forceWeeklyReset: () => {
+        console.log('🔄 [CalorieStore] Force weekly reset triggered by admin');
+        
+        const currentWeekGoal = get().currentWeekGoal;
+        if (!currentWeekGoal) {
+          console.log('❌ [CalorieStore] No current week goal found');
+          return;
+        }
+
+        const today = new Date();
+        const weekStart = format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+        const weekDates = Array.from({ length: 7 }, (_, i) => 
+          format(addDays(startOfWeek(today, { weekStartsOn: 1 }), i), 'yyyy-MM-dd')
+        );
+
+        console.log(`📅 [CalorieStore] Forcing reset from ${currentWeekGoal.weekStartDate} to ${weekStart}`);
+
+        // Clear old weekly data from previous week
+        const currentWeekDates = weekDates;
+        const oldDataToRemove = get().weeklyData.filter(day => !currentWeekDates.includes(day.date));
+        console.log('🗑️ [CalorieStore] Force clearing old weekly data:', oldDataToRemove.map(d => `${d.date}(${d.consumed}cal)`));
+
+        // Calculate previous week balance for carryover
+        let carryoverBalance = 0;
+        if (oldDataToRemove.length > 0) {
+          carryoverBalance = get().calculatePreviousWeekBalance(oldDataToRemove, currentWeekGoal);
+          console.log(`💰 [CalorieStore] Previous week balance: ${carryoverBalance} (will be applied to new week)`);
+        }
+
+        const updatedGoal = {
+          ...currentWeekGoal,
+          currentWeekAllowance: currentWeekGoal.weeklyAllowance + carryoverBalance, // Apply carryover to new week allowance
+          weekStartDate: weekStart // Update to current week start date
+        };
+
+        console.log(`📊 [CalorieStore] Force reset: New week allowance: ${currentWeekGoal.weeklyAllowance} + ${carryoverBalance} = ${updatedGoal.currentWeekAllowance}`);
+
+        // Update goal and clear old data
+        set(state => ({
+          currentWeekGoal: updatedGoal,
+          weeklyData: state.weeklyData.filter(day => currentWeekDates.includes(day.date))
+        }));
+
+        console.log('✅ [CalorieStore] Force weekly reset completed');
       },
 
       // NEW - Log workout session
