@@ -56,17 +56,22 @@ const RecoveryDebugger: React.FC = () => {
     }
   };
 
-  const handleCreatePlan = () => {
+  const handleCreatePlan = async () => {
     if (!pendingEvent) {
       Alert.alert('No Event', 'No pending overeating event to create plan for');
       return;
     }
     
-    const plan = createRecoveryPlan(pendingEvent.id);
-    if (plan) {
-      Alert.alert('Plan Created!', 
-        `Recovery plan created with ${plan.rebalancingOptions.length} options`
-      );
+    try {
+      const plan = await createRecoveryPlan(pendingEvent.id);
+      if (plan) {
+        Alert.alert('Plan Created!', 
+          `Recovery plan created with ${plan.rebalancingOptions.length} options${plan.aiActivitySuggestions ? ` and ${plan.aiActivitySuggestions.length} AI suggestions` : ''}`
+        );
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to create recovery plan');
+      console.error('Recovery plan creation failed:', error);
     }
   };
 

@@ -13,6 +13,8 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -67,6 +69,8 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
   const [athleteProfileTDEE, setAthleteProfileTDEE] = useState<EnhancedTDEEResult | null>(null);
   const [enhancedTDEE, setEnhancedTDEE] = useState<TDEECalculation | null>(null);
   const [recentActivities, setRecentActivities] = useState<UniversalActivity[]>([]);
+  const [manualTDEE, setManualTDEE] = useState<string>('');
+  const [isManualTDEEValid, setIsManualTDEEValid] = useState<boolean>(false);
 
   useEffect(() => {
     calculateBothTDEE();
@@ -86,7 +90,8 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
         gender: athleteProfile.physicalStats.gender,
         weight: athleteProfile.physicalStats.weight,
         height: athleteProfile.physicalStats.height,
-        activityLevel: 'moderate' as const // Default fallback
+        // FIXED: Use actual user activity level instead of hardcoded 'moderate'
+        activityLevel: userStats?.activityLevel || 'moderate' as const // Use userStats activity level if available
       };
     } else if (userStats) {
       console.log('👤 [EnhancedTDEE] Using userStats for standard TDEE');
@@ -157,7 +162,8 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
         gender: athleteProfile.physicalStats.gender,
         weight: athleteProfile.physicalStats.weight,
         height: athleteProfile.physicalStats.height,
-        activityLevel: 'moderate' as const // Default fallback
+        // FIXED: Use actual user activity level instead of hardcoded 'moderate'
+        activityLevel: userStats?.activityLevel || 'moderate' as const // Use userStats activity level if available
       };
     } else if (userStats) {
       console.log('👤 [EnhancedTDEE] Using userStats for enhanced TDEE');
@@ -289,8 +295,8 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
       const standard = calculateStandardTDEE();
       setStandardTDEE(standard);
 
-      // Calculate athlete profile TDEE if available
-      if (athleteProfile) {
+      // Calculate athlete profile TDEE if available and performance mode is enabled
+      if (goalConfig?.performanceMode && athleteProfile) {
         console.log('🏃‍♂️ [EnhancedTDEE] Calculating athlete profile TDEE...');
         console.log('🔍 [EnhancedTDEE] Athlete profile received:', {
           hasProfile: !!athleteProfile,
@@ -351,6 +357,36 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
     }
   };
 
+  const handleManualTDEEChange = (text: string) => {
+    setManualTDEE(text);
+    
+    // Validate manual TDEE input
+    const numericValue = parseInt(text, 10);
+    const isValid = !isNaN(numericValue) && numericValue >= 1000 && numericValue <= 6000;
+    setIsManualTDEEValid(isValid);
+    
+    console.log('🔢 [ManualTDEE] Input changed:', { text, numericValue, isValid });
+  };
+
+  const handleUseManualTDEE = () => {
+    console.log('🔘 [EnhancedTDEE] User pressed Manual TDEE button');
+    console.log('🔘 [EnhancedTDEE] manualTDEE value:', manualTDEE);
+    console.log('🔘 [EnhancedTDEE] isManualTDEEValid:', isManualTDEEValid);
+    
+    if (!isManualTDEEValid) {
+      Alert.alert(
+        'Invalid TDEE',
+        'Please enter a valid TDEE value between 1,000 and 6,000 calories per day.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
+    const numericValue = parseInt(manualTDEE, 10);
+    console.log('🔘 [EnhancedTDEE] Using manual TDEE:', numericValue);
+    onAcceptEnhanced(numericValue);
+  };
+
   const handleUseStandard = () => {
     console.log('🔘 [EnhancedTDEE] User pressed Standard TDEE button');
     console.log('🔘 [EnhancedTDEE] standardTDEE exists:', !!standardTDEE);
@@ -368,8 +404,9 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
   const handleUseEnhanced = () => {
     console.log('🔘 [EnhancedTDEE] User pressed Enhanced TDEE button');
     
-    // Prioritize athlete profile TDEE, then device-based enhanced TDEE
-    if (athleteProfileTDEE) {
+    // For performance mode users: prioritize athlete profile TDEE, then device-based enhanced TDEE
+    // For basic users: only use device-based enhanced TDEE
+    if (goalConfig?.performanceMode && athleteProfileTDEE) {
       console.log('🏃‍♂️ [EnhancedTDEE] Using athlete profile TDEE:', athleteProfileTDEE.dailyCalories);
       onAcceptEnhanced(athleteProfileTDEE.dailyCalories);
       // Don't navigate back - let the callback handle navigation
@@ -489,8 +526,8 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
           </View>
         )}
 
-        {/* Athlete Profile TDEE Card */}
-        {athleteProfileTDEE && (
+        {/* Athlete Profile TDEE Card - Only for Performance Mode Users */}
+        {goalConfig?.performanceMode && athleteProfileTDEE && (
           <View style={[styles.tdeeCard, { backgroundColor: theme.colors.surface }]}>
             <View style={styles.cardHeader}>
               <View style={styles.cardTitleRow}>
@@ -576,16 +613,74 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
           <View style={[styles.noEnhancedCard, { backgroundColor: theme.colors.card }]}>
             <Ionicons name="analytics-outline" size={48} color={theme.colors.textSecondary} />
             <Text style={[styles.noEnhancedTitle, { color: theme.colors.text }]}>
-              No Enhanced Data Available
+              Enhanced TDEE Unavailable
             </Text>
             <Text style={[styles.noEnhancedText, { color: theme.colors.textSecondary }]}>
-              Connect a health device to get personalized TDEE calculation based on your actual activity data
+              Enhanced TDEE requires 14 days of activity data from a connected health device. You can still use Standard TDEE{goalConfig?.performanceMode ? ', Athlete Profile TDEE, or enter a Custom TDEE' : ''} below.
             </Text>
           </View>
         )}
 
-        {/* Athlete Profile vs Standard Comparison */}
-        {athleteProfileTDEE && standardTDEE && (
+        {/* Manual TDEE Card - Only for Performance Mode Users */}
+        {goalConfig?.performanceMode && (
+          <View style={[styles.tdeeCard, { backgroundColor: theme.colors.surface }]}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardTitleRow}>
+                <Ionicons name="create-outline" size={20} color={theme.colors.warning} />
+                <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                  Custom TDEE
+                </Text>
+              </View>
+              <View style={[styles.confidenceBadge, { backgroundColor: theme.colors.warning }]}>
+                <Text style={styles.confidenceText}>MANUAL</Text>
+              </View>
+            </View>
+            
+            <View style={styles.manualInputContainer}>
+              <TextInput
+                style={[
+                  styles.manualTDEEInput,
+                  {
+                    backgroundColor: theme.colors.card,
+                    borderColor: isManualTDEEValid ? theme.colors.success : theme.colors.border,
+                    color: theme.colors.text
+                  }
+                ]}
+                value={manualTDEE}
+                onChangeText={handleManualTDEEChange}
+                placeholder="Enter your TDEE (e.g., 2500)"
+                placeholderTextColor={theme.colors.textSecondary}
+                keyboardType="numeric"
+                maxLength={4}
+              />
+              <Text style={[styles.caloriesLabel, { color: theme.colors.textSecondary }]}>
+                calories/day
+              </Text>
+            </View>
+            
+            <Text style={[styles.method, { color: theme.colors.textSecondary }]}>
+              Professional Assessment or Personal Experience
+            </Text>
+            
+            {isManualTDEEValid && (
+              <View style={styles.breakdown}>
+                <Text style={[styles.breakdownText, { color: theme.colors.textSecondary }]}>
+                  Entered Value: {parseInt(manualTDEE, 10).toLocaleString()} cal
+                </Text>
+                <Text style={[styles.breakdownText, { color: theme.colors.success }]}>
+                  ✓ Valid Range
+                </Text>
+              </View>
+            )}
+            
+            <Text style={[styles.dataSource, { color: theme.colors.textSecondary }]}>
+              For performance mode users with professional guidance or extensive experience
+            </Text>
+          </View>
+        )}
+
+        {/* Athlete Profile vs Standard Comparison - Only for Performance Mode Users */}
+        {goalConfig?.performanceMode && athleteProfileTDEE && standardTDEE && (
           <View style={[styles.differenceCard, { backgroundColor: theme.colors.surface }]}>
             <View style={styles.cardTitleRow}>
               <Ionicons name="trophy-outline" size={20} color={theme.colors.primary} />
@@ -674,7 +769,7 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
             </TouchableOpacity>
           )}
           
-          {athleteProfileTDEE && (
+          {goalConfig?.performanceMode && athleteProfileTDEE && (
             <TouchableOpacity
               style={[styles.button, styles.enhancedButton, { backgroundColor: theme.colors.primary }]}
               onPress={() => onAcceptEnhanced(athleteProfileTDEE.dailyCalories)}
@@ -684,6 +779,21 @@ const EnhancedTDEEComparisonScreen: React.FC<NativeStackScreenProps<RootStackPar
               </Text>
               <Text style={[styles.buttonSubtext, { color: theme.colors.buttonText, opacity: 0.8 }]}>
                 {athleteProfileTDEE.dailyCalories.toLocaleString()} calories/day
+              </Text>
+            </TouchableOpacity>
+          )}
+          
+          {/* Manual TDEE Button - Only for Performance Mode Users */}
+          {goalConfig?.performanceMode && isManualTDEEValid && (
+            <TouchableOpacity
+              style={[styles.button, styles.enhancedButton, { backgroundColor: theme.colors.warning }]}
+              onPress={handleUseManualTDEE}
+            >
+              <Text style={[styles.buttonText, { color: theme.colors.buttonText }]}>
+                Use Custom TDEE
+              </Text>
+              <Text style={[styles.buttonSubtext, { color: theme.colors.buttonText, opacity: 0.8 }]}>
+                {parseInt(manualTDEE, 10).toLocaleString()} calories/day
               </Text>
             </TouchableOpacity>
           )}
@@ -879,6 +989,26 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   profileDescription: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  manualInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  manualTDEEInput: {
+    flex: 1,
+    borderWidth: 2,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  caloriesLabel: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 });
 

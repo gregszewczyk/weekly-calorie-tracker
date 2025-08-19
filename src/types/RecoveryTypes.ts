@@ -22,6 +22,19 @@ export interface RecoveryPlan {
   rebalancingOptions: RebalancingOption[];
   createdAt: Date;
   selectedOption?: string; // ID of chosen rebalancing option
+  aiActivitySuggestions?: ActivityBoostSuggestion[]; // AI-generated activity tips
+}
+
+export interface ActivityBoostSuggestion {
+  id: string;
+  title: string;                    // "Add extra walks this week"
+  description: string;              // "Take a 30-minute walk 3 times this week"
+  activityType: string;             // "walking", "cycling", "swimming", etc.
+  estimatedCalorieBurn: number;     // Estimated calories burned (internal use)
+  duration: string;                 // "30 minutes" or "45-60 minutes"
+  frequency: string;                // "3 times this week" or "once per day"
+  difficulty: 'easy' | 'moderate';  // How challenging this suggestion is
+  personalizedReason?: string;      // "Based on your recent running sessions"
 }
 
 export type RecoveryStrategy = 

@@ -23,6 +23,7 @@ export class BingeRecoveryCalculator {
   
   /**
    * Detects if today's intake constitutes an overeating event
+   * Legacy method - kept for backwards compatibility
    */
   static detectOvereatingEvent(
     todayConsumed: number,
@@ -42,6 +43,77 @@ export class BingeRecoveryCalculator {
       id: `overeating_${date}_${Date.now()}`,
       date,
       excessCalories: excess,
+      triggerType,
+      detectedAt: new Date(),
+      userAcknowledged: false,
+    };
+  }
+
+  /**
+   * Enhanced overeating detection with weekly banking context
+   */
+  static detectOvereatingEventEnhanced(
+    todayConsumed: number,
+    todayTarget: number,
+    todayBurned: number,
+    date: string,
+    weeklyGoal: WeeklyCalorieGoal,
+    weeklyProgress: { totalConsumed: number; totalBurned: number; daysElapsed: number }
+  ): OvereatingEvent | null {
+    const excess = todayConsumed - todayTarget;
+    
+    // Step 1: Check if this is even significant
+    if (excess <= OVEREATING_THRESHOLDS.mild) {
+      return null; // Not significant enough to warrant intervention
+    }
+    
+    // Step 2: Check weekly bank balance
+    const netConsumedToday = todayConsumed - todayBurned;
+    const weeklyNetConsumed = weeklyProgress.totalConsumed - weeklyProgress.totalBurned + netConsumedToday;
+    const weeklyBankBalance = weeklyGoal.weeklyAllowance - weeklyNetConsumed;
+    
+    console.log(`🔍 [EnhancedDetection] Weekly bank balance: ${weeklyBankBalance}, excess: ${excess}`);
+    
+    // Step 3: If still within weekly budget, no recovery needed
+    if (weeklyBankBalance >= 0) {
+      console.log(`✅ [EnhancedDetection] Still within weekly budget (+${weeklyBankBalance}), no recovery needed`);
+      return null;
+    }
+    
+    // Step 3.5: Check for active banking plans that might affect thresholds
+    const activeBankingPlan = weeklyGoal.bankingPlan;
+    let adjustedMinimumSafe = weeklyGoal.dailyBaseline * 0.7; // Default 70%
+    
+    if (activeBankingPlan && activeBankingPlan.isActive) {
+      // If user has an active banking plan, don't let recovery go below their banking target
+      const bankingDailyTarget = weeklyGoal.dailyBaseline - activeBankingPlan.dailyReduction; // Banking reduces calories
+      adjustedMinimumSafe = Math.max(adjustedMinimumSafe, bankingDailyTarget * 0.9); // 90% of banking target
+      console.log(`🏦 [EnhancedDetection] Active banking plan detected, adjusted minimum safe: ${adjustedMinimumSafe}`);
+    }
+    
+    // Step 4: Check if redistribution would create unsafe daily targets
+    const daysRemaining = 7 - weeklyProgress.daysElapsed;
+    
+    if (daysRemaining > 0) {
+      const averageNeededPerDay = Math.abs(weeklyBankBalance) / daysRemaining;
+      const newDailyTarget = weeklyGoal.dailyBaseline - averageNeededPerDay;
+      
+      console.log(`⚠️ [EnhancedDetection] Would need ${averageNeededPerDay} cal/day reduction, new target: ${newDailyTarget}, minimum safe: ${adjustedMinimumSafe}`);
+      
+      // If redistribution would be unsafe, trigger recovery
+      if (newDailyTarget < adjustedMinimumSafe) {
+        console.log(`🚨 [EnhancedDetection] Redistribution unsafe (${newDailyTarget} < ${adjustedMinimumSafe}), triggering recovery`);
+      }
+    }
+    
+    // Step 5: Create the overeating event
+    const triggerType = excess >= OVEREATING_THRESHOLDS.severe ? 'severe' :
+                       excess >= OVEREATING_THRESHOLDS.moderate ? 'moderate' : 'mild';
+    
+    return {
+      id: `overeating_${date}_${Date.now()}`,
+      date,
+      excessCalories: Math.abs(weeklyBankBalance), // Use actual bank deficit, not just daily excess
       triggerType,
       detectedAt: new Date(),
       userAcknowledged: false,
@@ -86,19 +158,39 @@ export class BingeRecoveryCalculator {
     const excessCalories = event.excessCalories;
     const weeklyDeficit = Math.abs(goal.deficitTarget); // Make positive for calculations
     
-    // Real impact calculations
-    const timelineDelayDays = excessCalories / (weeklyDeficit / 7); // Daily deficit
-    const weeklyGoalImpact = (excessCalories / weeklyDeficit) * 100;
-    const monthlyGoalImpact = (excessCalories / (weeklyDeficit * 4.33)) * 100;
+    console.log(`🧮 [BingeRecovery] Calculating impact: excess=${excessCalories}, weeklyAllowance=${goal.weeklyAllowance}, weeklyDeficit=${weeklyDeficit}`);
+    
+    // NEW: Weekly goal impact calculations (more meaningful than daily deficit)
+    const weeklyBudgetImpact = (goal.weeklyAllowance > 0) ? (excessCalories / goal.weeklyAllowance) * 100 : 0;
+    const weeklyDeficitImpact = (weeklyDeficit > 0) ? (excessCalories / weeklyDeficit) * 100 : 0;
+    
+    // NEW: Main goal timeline impact (if available)
+    const mainGoalWeeks = goal.goalConfig?.timeline?.estimatedWeeksToGoal || 12; // fallback to 12 weeks
+    const totalMainGoalCalories = weeklyDeficit * mainGoalWeeks;
+    const mainGoalImpact = (totalMainGoalCalories > 0) ? (excessCalories / totalMainGoalCalories) * 100 : 0;
+    
+    // Calculate how many weeks this excess would need to be spread over to recover
+    const weeksToRecover = (weeklyDeficit > 0) ? Math.ceil(excessCalories / weeklyDeficit) : 1;
+    
+    // Cap extremely large values
+    let timelineDelayDays = Math.min(weeksToRecover * 7, 365); // Convert weeks to days, max 1 year
+    let weeklyGoalImpact = Math.min(weeklyBudgetImpact, 1000); // Use weekly budget impact instead
+    let monthlyGoalImpact = Math.min(mainGoalImpact, 1000); // Use main goal impact instead
     
     // Perspective calculations
     const avgWorkoutBurn = userWeight ? userWeight * 5 : 350; // Rough estimate
-    const equivalentWorkouts = excessCalories / avgWorkoutBurn;
-    const daysToNullify = Math.ceil(excessCalories / (weeklyDeficit / 7));
+    let equivalentWorkouts = excessCalories / avgWorkoutBurn;
     
-    // Total journey perspective (assuming 12-week cut)
-    const totalJourneyCalories = weeklyDeficit * 12;
-    const percentOfTotalJourney = (excessCalories / totalJourneyCalories) * 100;
+    // NEW: More meaningful perspective - weeks to nullify with gentle rebalancing
+    let weeksToNullify = weeksToRecover;
+    
+    // NEW: Use actual main goal percentage instead of arbitrary 12-week assumption
+    let percentOfTotalJourney = mainGoalImpact;
+    
+    // Cap perspective values
+    if (!isFinite(equivalentWorkouts) || equivalentWorkouts > 50) equivalentWorkouts = 50; // Max 50 workouts
+    if (!isFinite(weeksToNullify) || weeksToNullify > 52) weeksToNullify = 52; // Max 1 year
+    if (!isFinite(percentOfTotalJourney) || percentOfTotalJourney > 100) percentOfTotalJourney = 100; // Max 100%
     
     // Generate reframing message
     const messageTemplate = RECOVERY_MESSAGES[event.triggerType];
@@ -112,7 +204,7 @@ export class BingeRecoveryCalculator {
       },
       perspective: {
         equivalentWorkouts: Math.round(equivalentWorkouts * 10) / 10,
-        daysToNullify,
+        daysToNullify: weeksToNullify * 7, // Convert back to days for UI compatibility
         percentOfTotalJourney: Math.round(percentOfTotalJourney * 10) / 10,
       },
       reframe: {
@@ -283,18 +375,26 @@ export class BingeRecoveryCalculator {
     
     const messages = {
       mild: {
-        message: `This adds ${timelineDelay.toFixed(1)} days to your timeline - completely manageable.`,
-        focus: "One high day is just ${weeklyImpact}% of your weekly progress.",
+        message: weeklyImpact >= 100 
+          ? "This uses more than your weekly budget, but it's completely recoverable with the right plan."
+          : `This uses ${weeklyImpact.toFixed(1)}% of your weekly calorie budget - completely manageable.`,
+        focus: weeklyImpact >= 1000 
+          ? "This is a substantial amount, but you have strategies to handle it."
+          : `One high day doesn't derail your progress - you have ${(100 - weeklyImpact).toFixed(1)}% of your week left.`,
         reminder: "You've been consistent before, you can handle this easily."
       },
       moderate: {
-        message: `This represents ${weeklyImpact}% of your weekly deficit. Mathematics, not emotions.`,
-        focus: "You have proven strategies to rebalance this systematically.",
-        reminder: "Every successful cut has days like this. It's normal."
+        message: weeklyImpact >= 100 
+          ? "This exceeds your weekly budget. Let's create a smart rebalancing plan."
+          : `This uses ${weeklyImpact.toFixed(1)}% of your weekly calorie budget. Mathematics, not emotions.`,
+        focus: "You have proven strategies to rebalance this systematically across the coming weeks.",
+        reminder: "Every successful journey has days like this. It's normal."
       },
       severe: {
-        message: `This is ${timelineDelay.toFixed(1)} days impact, but taking a maintenance week prevents bigger setbacks.`,
-        focus: "Preventing a binge-restrict spiral is more important than timeline perfection.",
+        message: weeklyImpact >= 100 
+          ? "This is a substantial overage, but taking a maintenance approach prevents bigger setbacks."
+          : `This uses ${weeklyImpact.toFixed(1)}% of your weekly budget, but a maintenance approach prevents setbacks.`,
+        focus: "Preventing a restrict-binge cycle is more important than perfect weekly targets.",
         reminder: "Consistency beats perfection. Protecting your mental health protects your results."
       }
     };

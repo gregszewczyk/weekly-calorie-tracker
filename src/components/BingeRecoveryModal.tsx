@@ -15,8 +15,10 @@ import {
   OvereatingEvent,
   RecoveryPlan,
   RebalancingOption,
+  ActivityBoostSuggestion,
   RECOVERY_MESSAGES,
 } from '../types/RecoveryTypes';
+import { useTheme } from '../contexts/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
@@ -37,8 +39,10 @@ const BingeRecoveryModal: React.FC<BingeRecoveryModalProps> = ({
   onSelectOption,
   onAcknowledge,
 }) => {
+  const { theme } = useTheme();
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState<string | null>(null);
+  const [showActivitySuggestions, setShowActivitySuggestions] = useState(false);
 
   if (!overeatingEvent || !recoveryPlan) {
     return null;
@@ -69,34 +73,38 @@ const BingeRecoveryModal: React.FC<BingeRecoveryModalProps> = ({
     onClose();
   };
 
-  const getColorByTriggerType = (triggerType: OvereatingEvent['triggerType']) => {
+  const getStatusColor = (triggerType: OvereatingEvent['triggerType']) => {
     switch (triggerType) {
       case 'mild':
-        return '#28A745'; // Green
+        return '#51CF66'; // Success green
       case 'moderate':
-        return '#FFC107'; // Yellow
+        return '#FFD43B'; // Warning yellow
       case 'severe':
-        return '#DC3545'; // Red
+        return '#FF6B6B'; // Error red
       default:
-        return '#6C757D'; // Gray
+        return theme.colors.textSecondary;
     }
   };
 
   const getIconByTriggerType = (triggerType: OvereatingEvent['triggerType']) => {
     switch (triggerType) {
       case 'mild':
-        return 'information-circle';
+        return 'information-circle-outline';
       case 'moderate':
-        return 'warning';
+        return 'warning-outline';
       case 'severe':
-        return 'alert-circle';
+        return 'alert-circle-outline';
       default:
-        return 'help-circle';
+        return 'help-circle-outline';
     }
   };
 
-  const headerColor = getColorByTriggerType(overeatingEvent.triggerType);
-  const headerIcon = getIconByTriggerType(overeatingEvent.triggerType);
+  const statusColor = getStatusColor(overeatingEvent.triggerType);
+  const statusIcon = getIconByTriggerType(overeatingEvent.triggerType);
+
+  const formatNumber = (num: number): string => {
+    return Math.round(num).toLocaleString();
+  };
 
   return (
     <Modal
@@ -105,119 +113,205 @@ const BingeRecoveryModal: React.FC<BingeRecoveryModalProps> = ({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.container}>
-        {/* Header */}
-        <View style={[styles.header, { backgroundColor: headerColor }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        {/* Clean Header */}
+        <View style={[styles.header, { backgroundColor: theme.colors.background, borderBottomColor: theme.colors.border }]}>
           <View style={styles.headerContent}>
-            <Ionicons name={headerIcon} size={28} color="#FFFFFF" />
-            <View style={styles.headerText}>
-              <Text style={styles.headerTitle}>{messageTemplate.title}</Text>
-              <Text style={styles.headerSubtitle}>
-                {overeatingEvent.excessCalories} calories over target
-              </Text>
-            </View>
+            <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{messageTemplate.title}</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Ionicons name="close" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Positive Reframing Section */}
-          <View style={styles.section}>
-            <View style={styles.reframeCard}>
-              <Text style={styles.reframeMessage}>{impactAnalysis.reframe.message}</Text>
-              <Text style={styles.refocusPoint}>{impactAnalysis.reframe.focusPoint}</Text>
+          {/* Hero Section - Following WeeklyBankingScreen Pattern */}
+          <View style={[styles.heroSection, { backgroundColor: theme.colors.surface }]}>
+            {/* Status Header */}
+            <View style={styles.statusHeader}>
+              <View style={styles.statusIndicator}>
+                <Ionicons name={statusIcon} size={20} color={statusColor} />
+                <Text style={[styles.statusText, { color: theme.colors.text }]}>
+                  {formatNumber(overeatingEvent.excessCalories)} calories over target
+                </Text>
+              </View>
+              <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+                <Text style={[styles.statusLabel, { color: statusColor }]}>
+                  {overeatingEvent.triggerType.toUpperCase()}
+                </Text>
+              </View>
+            </View>
+
+            {/* Positive Reframing */}
+            <View style={[styles.reframeSection, { backgroundColor: theme.colors.card }]}>
+              <Text style={[styles.reframeMessage, { color: theme.colors.text }]}>
+                {impactAnalysis.reframe.message}
+              </Text>
+              <Text style={[styles.refocusPoint, { color: theme.colors.textSecondary }]}>
+                {impactAnalysis.reframe.focusPoint}
+              </Text>
               {impactAnalysis.reframe.successReminder && (
-                <Text style={styles.successReminder}>
-                  💪 {impactAnalysis.reframe.successReminder}
+                <Text style={[styles.successReminder, { color: '#51CF66' }]}>
+                  {impactAnalysis.reframe.successReminder}
                 </Text>
               )}
             </View>
           </View>
 
-          {/* Impact Analysis */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Real Impact</Text>
+          {/* Impact Analysis - Streamlined Cards */}
+          <View style={[styles.impactSection, { backgroundColor: theme.colors.surface }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Real Impact</Text>
+            
             <View style={styles.impactGrid}>
-              <View style={styles.impactCard}>
-                <Text style={styles.impactNumber}>
-                  {impactAnalysis.realImpact.timelineDelayDays}
+              <View style={[styles.impactCard, { backgroundColor: theme.colors.card }]}>
+                <Text style={[styles.impactLabel, { color: theme.colors.textSecondary }]}>WEEKS TO RECOVER</Text>
+                <Text style={[styles.impactValue, { color: theme.colors.primary }]}>
+                  {isNaN(impactAnalysis.realImpact.timelineDelayDays) ? '0' : Math.round(impactAnalysis.realImpact.timelineDelayDays / 7 * 10) / 10}
                 </Text>
-                <Text style={styles.impactLabel}>days delay</Text>
               </View>
-              <View style={styles.impactCard}>
-                <Text style={styles.impactNumber}>
-                  {impactAnalysis.realImpact.weeklyGoalImpact}%
+              <View style={[styles.impactCard, { backgroundColor: theme.colors.card }]}>
+                <Text style={[styles.impactLabel, { color: theme.colors.textSecondary }]}>OF WEEKLY BUDGET</Text>
+                <Text style={[styles.impactValue, { color: theme.colors.primary }]}>
+                  {isNaN(impactAnalysis.realImpact.weeklyGoalImpact) ? '0' : impactAnalysis.realImpact.weeklyGoalImpact}%
                 </Text>
-                <Text style={styles.impactLabel}>of weekly deficit</Text>
-              </View>
-              <View style={styles.impactCard}>
-                <Text style={styles.impactNumber}>
-                  {impactAnalysis.perspective.equivalentWorkouts}
-                </Text>
-                <Text style={styles.impactLabel}>workout sessions</Text>
               </View>
             </View>
-            <Text style={styles.impactSummary}>
-              This represents {impactAnalysis.perspective.percentOfTotalJourney}% of your total journey.
-              Normal tracking for {impactAnalysis.perspective.daysToNullify} days nullifies this completely.
+
+            <Text style={[styles.impactSummary, { color: theme.colors.textSecondary }]}>
+              This represents {isNaN(impactAnalysis.perspective.percentOfTotalJourney) ? '0' : Math.round(impactAnalysis.perspective.percentOfTotalJourney * 10) / 10}% of your main goal. 
+              Gentle rebalancing gets you back on track.
             </Text>
           </View>
 
-          {/* Recommended Options */}
-          {recommendedOptions.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>✅ Recommended Options</Text>
-              {recommendedOptions.map((option) => (
-                <RebalancingOptionCard
-                  key={option.id}
-                  option={option}
-                  isSelected={selectedOptionId === option.id}
-                  isExpanded={showDetails === option.id}
-                  onSelect={() => setSelectedOptionId(option.id)}
-                  onToggleDetails={() => 
-                    setShowDetails(showDetails === option.id ? null : option.id)
-                  }
-                />
-              ))}
-            </View>
-          )}
+          {/* Recovery Options - Streamlined */}
+          <View style={[styles.optionsSection, { backgroundColor: theme.colors.surface }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Recovery Options</Text>
+            
+            {/* Recommended Options */}
+            {recommendedOptions.map((option) => (
+              <RebalancingOptionCard
+                key={option.id}
+                option={option}
+                isSelected={selectedOptionId === option.id}
+                isExpanded={showDetails === option.id}
+                onSelect={() => setSelectedOptionId(option.id)}
+                onToggleDetails={() => 
+                  setShowDetails(showDetails === option.id ? null : option.id)
+                }
+                theme={theme}
+                isRecommended={true}
+              />
+            ))}
 
-          {/* Other Options */}
-          {otherOptions.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>💡 Other Options</Text>
-              {otherOptions.map((option) => (
-                <RebalancingOptionCard
-                  key={option.id}
-                  option={option}
-                  isSelected={selectedOptionId === option.id}
-                  isExpanded={showDetails === option.id}
-                  onSelect={() => setSelectedOptionId(option.id)}
-                  onToggleDetails={() => 
-                    setShowDetails(showDetails === option.id ? null : option.id)
-                  }
+            {/* Other Options */}
+            {otherOptions.map((option) => (
+              <RebalancingOptionCard
+                key={option.id}
+                option={option}
+                isSelected={selectedOptionId === option.id}
+                isExpanded={showDetails === option.id}
+                onSelect={() => setSelectedOptionId(option.id)}
+                onToggleDetails={() => 
+                  setShowDetails(showDetails === option.id ? null : option.id)
+                }
+                theme={theme}
+                isRecommended={false}
+              />
+            ))}
+          </View>
+
+          {/* AI Activity Boost Suggestions - Expandable */}
+          {recoveryPlan.aiActivitySuggestions && recoveryPlan.aiActivitySuggestions.length > 0 && (
+            <View style={[styles.activitySection, { backgroundColor: theme.colors.surface }]}>
+              <TouchableOpacity
+                style={styles.activityHeader}
+                onPress={() => setShowActivitySuggestions(!showActivitySuggestions)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.activityHeaderContent}>
+                  <Ionicons 
+                    name="fitness-outline" 
+                    size={20} 
+                    color={theme.colors.primary} 
+                    style={styles.activityIcon}
+                  />
+                  <Text style={[styles.activityTitle, { color: theme.colors.text }]}>
+                    Activity Boost Tips
+                  </Text>
+                  <Text style={[styles.activitySubtitle, { color: theme.colors.textSecondary }]}>
+                    AI suggestions to help recovery
+                  </Text>
+                </View>
+                <Ionicons
+                  name={showActivitySuggestions ? 'chevron-up' : 'chevron-down'}
+                  size={20}
+                  color={theme.colors.textSecondary}
                 />
-              ))}
+              </TouchableOpacity>
+
+              {showActivitySuggestions && (
+                <View style={styles.activityContent}>
+                  {recoveryPlan.aiActivitySuggestions.map((suggestion) => (
+                    <View 
+                      key={suggestion.id} 
+                      style={[styles.suggestionCard, { backgroundColor: theme.colors.card }]}
+                    >
+                      <View style={styles.suggestionHeader}>
+                        <Text style={[styles.suggestionTitle, { color: theme.colors.text }]}>
+                          {suggestion.title}
+                        </Text>
+                        <View style={[
+                          styles.difficultyBadge,
+                          { backgroundColor: suggestion.difficulty === 'easy' ? '#E8F5E8' : '#FFF3E0' }
+                        ]}>
+                          <Text style={[
+                            styles.difficultyText,
+                            { color: suggestion.difficulty === 'easy' ? '#2E7D32' : '#F57C00' }
+                          ]}>
+                            {suggestion.difficulty}
+                          </Text>
+                        </View>
+                      </View>
+                      
+                      <Text style={[styles.suggestionDescription, { color: theme.colors.textSecondary }]}>
+                        {suggestion.description}
+                      </Text>
+                      
+                      {suggestion.personalizedReason && (
+                        <Text style={[styles.personalizedReason, { color: theme.colors.primary }]}>
+                          💡 {suggestion.personalizedReason}
+                        </Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           )}
         </ScrollView>
 
-        {/* Action Buttons */}
-        <View style={styles.actionBar}>
-          <TouchableOpacity style={styles.dismissButton} onPress={handleDismiss}>
-            <Text style={styles.dismissButtonText}>I'll Handle This Myself</Text>
+        {/* Action Buttons - Following FAB Pattern */}
+        <View style={[styles.actionBar, { backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
+          <TouchableOpacity 
+            style={[styles.dismissButton, { borderColor: theme.colors.border }]} 
+            onPress={handleDismiss}
+          >
+            <Text style={[styles.dismissButtonText, { color: theme.colors.text }]}>
+              I'll Handle This Myself
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.selectButton,
-              !selectedOptionId && styles.selectButtonDisabled,
+              { backgroundColor: selectedOptionId ? theme.colors.primary : theme.colors.textSecondary },
             ]}
             onPress={handleSelectOption}
             disabled={!selectedOptionId}
+            activeOpacity={0.8}
           >
-            <Text style={styles.selectButtonText}>Start Recovery Plan</Text>
+            <Text style={[styles.selectButtonText, { color: theme.colors.buttonText }]}>
+              Start Recovery Plan
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -231,6 +325,8 @@ interface RebalancingOptionCardProps {
   isExpanded: boolean;
   onSelect: () => void;
   onToggleDetails: () => void;
+  theme: any;
+  isRecommended: boolean;
 }
 
 const RebalancingOptionCard: React.FC<RebalancingOptionCardProps> = ({
@@ -239,30 +335,32 @@ const RebalancingOptionCard: React.FC<RebalancingOptionCardProps> = ({
   isExpanded,
   onSelect,
   onToggleDetails,
+  theme,
+  isRecommended,
 }) => {
   const getEffortLevelColor = (effortLevel: string) => {
     switch (effortLevel) {
       case 'minimal':
-        return '#28A745';
+        return '#51CF66';
       case 'moderate':
-        return '#FFC107';
+        return '#FFD43B';
       case 'challenging':
-        return '#FD7E14';
+        return '#FF6B6B';
       default:
-        return '#6C757D';
+        return theme.colors.textSecondary;
     }
   };
 
   const getRiskLevelColor = (riskLevel: string) => {
     switch (riskLevel) {
       case 'safe':
-        return '#28A745';
+        return '#51CF66';
       case 'moderate':
-        return '#FFC107';
+        return '#FFD43B';
       case 'aggressive':
-        return '#DC3545';
+        return '#FF6B6B';
       default:
-        return '#6C757D';
+        return theme.colors.textSecondary;
     }
   };
 
@@ -270,38 +368,53 @@ const RebalancingOptionCard: React.FC<RebalancingOptionCardProps> = ({
     <TouchableOpacity
       style={[
         styles.optionCard,
-        isSelected && styles.optionCardSelected,
-        option.recommendation === 'not-recommended' && styles.optionCardNotRecommended,
+        { 
+          backgroundColor: theme.colors.card, 
+          borderColor: isSelected ? theme.colors.primary : theme.colors.border 
+        },
+        isSelected && { borderWidth: 2 },
       ]}
       onPress={onSelect}
+      activeOpacity={0.8}
     >
       <View style={styles.optionHeader}>
         <View style={styles.optionTitleRow}>
-          <View style={styles.optionRadio}>
-            {isSelected && <View style={styles.optionRadioSelected} />}
+          <View style={[styles.optionRadio, { borderColor: theme.colors.border }]}>
+            {isSelected && <View style={[styles.optionRadioSelected, { backgroundColor: theme.colors.primary }]} />}
           </View>
           <View style={styles.optionInfo}>
-            <Text style={styles.optionName}>{option.name}</Text>
-            <Text style={styles.optionDescription}>{option.description}</Text>
+            <View style={styles.optionTitleWithBadge}>
+              <Text style={[styles.optionName, { color: theme.colors.text }]}>{option.name}</Text>
+              {isRecommended && (
+                <View style={[styles.recommendedBadge, { backgroundColor: '#51CF66' }]}>
+                  <Text style={styles.recommendedBadgeText}>RECOMMENDED</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.optionDescription, { color: theme.colors.textSecondary }]}>
+              {option.description}
+            </Text>
           </View>
         </View>
         <TouchableOpacity onPress={onToggleDetails} style={styles.expandButton}>
           <Ionicons
             name={isExpanded ? 'chevron-up' : 'chevron-down'}
             size={20}
-            color="#6C757D"
+            color={theme.colors.textSecondary}
           />
         </TouchableOpacity>
       </View>
 
-      {/* Quick Impact Preview */}
+      {/* Quick Impact Preview - Streamlined */}
       <View style={styles.optionPreview}>
         <View style={styles.previewItem}>
-          <Text style={styles.previewLabel}>New Target:</Text>
-          <Text style={styles.previewValue}>{option.impact.newDailyTarget} cal</Text>
+          <Text style={[styles.previewLabel, { color: theme.colors.textSecondary }]}>Target:</Text>
+          <Text style={[styles.previewValue, { color: theme.colors.text }]}>
+            {Math.round(option.impact.newDailyTarget).toLocaleString()} cal
+          </Text>
         </View>
         <View style={styles.previewItem}>
-          <Text style={styles.previewLabel}>Effort:</Text>
+          <Text style={[styles.previewLabel, { color: theme.colors.textSecondary }]}>Effort:</Text>
           <Text style={[
             styles.previewValue,
             { color: getEffortLevelColor(option.impact.effortLevel) }
@@ -310,7 +423,7 @@ const RebalancingOptionCard: React.FC<RebalancingOptionCardProps> = ({
           </Text>
         </View>
         <View style={styles.previewItem}>
-          <Text style={styles.previewLabel}>Risk:</Text>
+          <Text style={[styles.previewLabel, { color: theme.colors.textSecondary }]}>Risk:</Text>
           <Text style={[
             styles.previewValue,
             { color: getRiskLevelColor(option.impact.riskLevel) }
@@ -322,36 +435,28 @@ const RebalancingOptionCard: React.FC<RebalancingOptionCardProps> = ({
 
       {/* Expanded Details */}
       {isExpanded && (
-        <View style={styles.optionDetails}>
+        <View style={[styles.optionDetails, { backgroundColor: theme.colors.background }]}>
           <View style={styles.prosConsContainer}>
             <View style={styles.prosContainer}>
-              <Text style={styles.prosConsTitle}>✅ Pros:</Text>
+              <Text style={[styles.prosConsTitle, { color: theme.colors.text }]}>Pros:</Text>
               {option.pros.map((pro, index) => (
-                <Text key={index} style={styles.prosConsItem}>• {pro}</Text>
+                <Text key={index} style={[styles.prosConsItem, { color: theme.colors.text }]}>
+                  • {pro}
+                </Text>
               ))}
             </View>
             
             {option.cons && option.cons.length > 0 && (
               <View style={styles.consContainer}>
-                <Text style={styles.prosConsTitle}>⚠️ Considerations:</Text>
+                <Text style={[styles.prosConsTitle, { color: theme.colors.text }]}>Considerations:</Text>
                 {option.cons.map((con, index) => (
-                  <Text key={index} style={styles.prosConsItem}>• {con}</Text>
+                  <Text key={index} style={[styles.prosConsItem, { color: theme.colors.text }]}>
+                    • {con}
+                  </Text>
                 ))}
               </View>
             )}
           </View>
-        </View>
-      )}
-
-      {/* Recommendation Badge */}
-      {option.recommendation === 'recommended' && (
-        <View style={styles.recommendedBadge}>
-          <Text style={styles.recommendedBadgeText}>RECOMMENDED</Text>
-        </View>
-      )}
-      {option.recommendation === 'not-recommended' && (
-        <View style={styles.notRecommendedBadge}>
-          <Text style={styles.notRecommendedBadgeText}>ADVANCED</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -359,129 +464,155 @@ const RebalancingOptionCard: React.FC<RebalancingOptionCardProps> = ({
 };
 
 const styles = StyleSheet.create({
+  // Container and Layout
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 20,
-    paddingTop: 50,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
-  },
-  headerText: {
-    marginLeft: 12,
-    flex: 1,
+    justifyContent: 'space-between',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontWeight: '500',
   },
   closeButton: {
-    padding: 4,
+    padding: 8,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
-  section: {
-    marginBottom: 24,
+
+  // Hero Section - Following WeeklyBankingScreen Pattern
+  heroSection: {
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#212529',
+  statusHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
   },
-  reframeCard: {
-    backgroundColor: '#E7F3FF',
+  statusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  statusText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  statusLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+
+  // Positive Reframing Section
+  reframeSection: {
     borderRadius: 12,
-    padding: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#339AF0',
+    padding: 16,
+    marginTop: 8,
   },
   reframeMessage: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#212529',
-    marginBottom: 12,
+    marginBottom: 8,
     lineHeight: 24,
   },
   refocusPoint: {
-    fontSize: 15,
-    color: '#495057',
+    fontSize: 14,
     marginBottom: 8,
-    lineHeight: 22,
+    lineHeight: 20,
   },
   successReminder: {
-    fontSize: 15,
-    color: '#28A745',
+    fontSize: 14,
     fontWeight: '600',
-    lineHeight: 22,
+    lineHeight: 20,
+  },
+
+  // Impact Analysis - Streamlined
+  impactSection: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
   },
   impactGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
     marginBottom: 16,
   },
   impactCard: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
+    flex: 1,
+    borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    flex: 1,
-    marginHorizontal: 4,
-    borderWidth: 1,
-    borderColor: '#E9ECEF',
-  },
-  impactNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#339AF0',
-    marginBottom: 4,
   },
   impactLabel: {
-    fontSize: 12,
-    color: '#6C757D',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 8,
     textAlign: 'center',
-    fontWeight: '500',
+  },
+  impactValue: {
+    fontSize: 24,
+    fontWeight: '700',
   },
   impactSummary: {
     fontSize: 14,
-    color: '#495057',
     textAlign: 'center',
     lineHeight: 20,
     fontStyle: 'italic',
   },
+
+  // Recovery Options
+  optionsSection: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   optionCard: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#E9ECEF',
+    borderWidth: 1,
     marginBottom: 12,
     overflow: 'hidden',
-    position: 'relative',
-  },
-  optionCardSelected: {
-    borderColor: '#339AF0',
-    backgroundColor: '#F0F8FF',
-  },
-  optionCardNotRecommended: {
-    opacity: 0.8,
   },
   optionHeader: {
     flexDirection: 'row',
@@ -499,7 +630,6 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#DEE2E6',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -509,51 +639,51 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#339AF0',
   },
   optionInfo: {
     flex: 1,
   },
+  optionTitleWithBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 8,
+  },
   optionName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#212529',
-    marginBottom: 4,
   },
   optionDescription: {
     fontSize: 14,
-    color: '#6C757D',
     lineHeight: 20,
   },
   expandButton: {
     padding: 8,
-    marginLeft: 8,
   },
+
+  // Preview Section
   optionPreview: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingHorizontal: 16,
     paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F3F4',
   },
   previewItem: {
     alignItems: 'center',
   },
   previewLabel: {
     fontSize: 12,
-    color: '#6C757D',
     marginBottom: 4,
     fontWeight: '500',
   },
   previewValue: {
     fontSize: 14,
-    color: '#212529',
     fontWeight: '600',
   },
+
+  // Expanded Details
   optionDetails: {
     padding: 16,
-    backgroundColor: '#F8F9FA',
   },
   prosConsContainer: {
     gap: 12,
@@ -567,21 +697,18 @@ const styles = StyleSheet.create({
   prosConsTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#212529',
     marginBottom: 8,
   },
   prosConsItem: {
     fontSize: 13,
-    color: '#495057',
     marginBottom: 4,
     lineHeight: 18,
     paddingLeft: 8,
   },
+
+  // Badges
   recommendedBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#28A745',
+    backgroundColor: '#51CF66',
     borderRadius: 4,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -591,26 +718,13 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
   },
-  notRecommendedBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#FFC107',
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  notRecommendedBadgeText: {
-    fontSize: 10,
-    color: '#212529',
-    fontWeight: '700',
-  },
+
+  // Action Bar - Following FAB Pattern
   actionBar: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E9ECEF',
     gap: 12,
   },
   dismissButton: {
@@ -618,28 +732,101 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#6C757D',
     alignItems: 'center',
   },
   dismissButtonText: {
     fontSize: 16,
-    color: '#6C757D',
     fontWeight: '600',
   },
   selectButton: {
     flex: 1,
     paddingVertical: 16,
     borderRadius: 8,
-    backgroundColor: '#339AF0',
     alignItems: 'center',
-  },
-  selectButtonDisabled: {
-    backgroundColor: '#ADB5BD',
   },
   selectButtonText: {
     fontSize: 16,
-    color: '#FFFFFF',
     fontWeight: '600',
+  },
+
+  // AI Activity Suggestions Section
+  activitySection: {
+    borderRadius: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  activityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  activityHeaderContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activityIcon: {
+    marginRight: 12,
+  },
+  activityTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  activitySubtitle: {
+    fontSize: 13,
+    fontWeight: '400',
+  },
+  activityContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  suggestionCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  suggestionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  suggestionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  difficultyBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  difficultyText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  suggestionDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  personalizedReason: {
+    fontSize: 13,
+    fontWeight: '500',
+    fontStyle: 'italic',
   },
 });
 

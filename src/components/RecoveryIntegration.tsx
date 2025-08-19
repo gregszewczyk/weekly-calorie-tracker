@@ -39,9 +39,15 @@ const RecoveryIntegration: React.FC<RecoveryIntegrationProps> = ({ style }) => {
     // Auto-show recovery modal when a new overeating event is detected
     if (pendingEvent && !currentEvent) {
       setCurrentEvent(pendingEvent);
-      const recoveryPlan = createRecoveryPlan(pendingEvent.id);
-      setCurrentRecoveryPlan(recoveryPlan);
       setShowRecoveryModal(true);
+      
+      // Generate recovery plan with AI suggestions in background
+      createRecoveryPlan(pendingEvent.id).then(recoveryPlan => {
+        setCurrentRecoveryPlan(recoveryPlan);
+      }).catch(error => {
+        console.error('Failed to create recovery plan:', error);
+        setCurrentRecoveryPlan(null);
+      });
     }
   }, [pendingEvent]);
 

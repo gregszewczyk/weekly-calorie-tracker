@@ -215,57 +215,52 @@ const AthleteOnboardingWrapper: React.FC = () => {
       console.log('💾 [AppNavigator] Saving updated goal configuration:', updatedGoalConfig);
       setGoalConfiguration(updatedGoalConfig);
       
-      // Check if health device is connected and offer Enhanced TDEE comparison
-      const hasHealthDevice = healthDeviceManager.hasAnyConnection();
-      console.log('🔍 [AppNavigator] Health device connected after athlete onboarding:', hasHealthDevice);
+      // ALWAYS navigate to TDEE comparison - Enhanced options will be available based on device connectivity
+      console.log('🎯 [AppNavigator] Navigating to TDEE comparison (enhanced options based on device connectivity)');
       
-      if (hasHealthDevice) {
-        console.log('🎯 [AppNavigator] Health device detected, offering Enhanced TDEE comparison with real athlete data');
-        
-        // Pass the full athlete profile instead of converting to basic userStats
-        navigation.navigate('EnhancedTDEEComparison', {
-          athleteProfile,
-          goalConfig: updatedGoalConfig,
-          onAcceptEnhanced: (enhancedTDEE: number) => {
-            console.log('✅ [AppNavigator] Athlete accepted enhanced TDEE:', enhancedTDEE);
-            const enhancedGoalConfig = { ...updatedGoalConfig, enhancedTDEE };
-            setGoalConfiguration(enhancedGoalConfig);
-            
-            // Navigate to nutrition recommendations instead of creating goal directly
-            console.log('🍎 [AppNavigator] Navigating to nutrition recommendations with enhanced TDEE');
-            console.log('🔍 [AppNavigator] Enhanced goal config being passed:', enhancedGoalConfig);
-            navigation.navigate('NutritionRecommendation', {
-              athleteProfile,
-              goalConfiguration: enhancedGoalConfig,
-              selectedTDEE: enhancedTDEE,
-              tdeeMethod: 'enhanced'
-            });
-          },
-          onUseStandard: (standardTDEE: number) => {
-            console.log('📊 [AppNavigator] Athlete chose standard TDEE:', standardTDEE);
-            const standardGoalConfig = { ...updatedGoalConfig, standardTDEE };
-            setGoalConfiguration(standardGoalConfig);
-            
-            // Navigate to nutrition recommendations instead of creating goal directly
-            console.log('🍎 [AppNavigator] Navigating to nutrition recommendations with standard TDEE');
-            console.log('🔍 [AppNavigator] Standard goal config being passed:', standardGoalConfig);
-            navigation.navigate('NutritionRecommendation', {
-              athleteProfile,
-              goalConfiguration: standardGoalConfig,
-              selectedTDEE: standardTDEE,
-              tdeeMethod: 'standard'
-            });
-          },
-        });
-        return;
-      }
+      // Convert athleteProfile to userStats for the TDEE screen
+      const userStats = {
+        age: athleteProfile.physicalStats.age,
+        gender: athleteProfile.physicalStats.gender,
+        weight: athleteProfile.physicalStats.weight,
+        height: athleteProfile.physicalStats.height,
+        activityLevel: 'moderate' as const, // Default fallback
+      };
       
-      // No health device connected, create weekly goal with estimated TDEE
-      console.log('🚀 [AppNavigator] No health device, creating weekly goal with estimated athlete TDEE');
-      
-      // Calculate basic TDEE for athletic user (higher than average)
-      const athleticTDEE = 2500; // Fallback athletic TDEE estimate
-      createWeeklyGoalWithTDEE(athleticTDEE, updatedGoalConfig, 'standard');
+      // Navigate to TDEE comparison - Enhanced TDEE will show if device connected
+      navigation.navigate('EnhancedTDEEComparison', {
+        athleteProfile,
+        userStats,
+        goalConfig: updatedGoalConfig,
+        onAcceptEnhanced: (selectedTDEE: number) => {
+          console.log('✅ [AppNavigator] User selected TDEE:', selectedTDEE);
+          const finalGoalConfig = { ...updatedGoalConfig, enhancedTDEE: selectedTDEE };
+          setGoalConfiguration(finalGoalConfig);
+          
+          // Navigate to nutrition recommendations 
+          console.log('🍎 [AppNavigator] Navigating to nutrition recommendations with selected TDEE');
+          navigation.navigate('NutritionRecommendation', {
+            athleteProfile,
+            goalConfiguration: finalGoalConfig,
+            selectedTDEE,
+            tdeeMethod: 'enhanced'
+          });
+        },
+        onUseStandard: (standardTDEE: number) => {
+          console.log('📊 [AppNavigator] User chose standard TDEE:', standardTDEE);
+          const standardGoalConfig = { ...updatedGoalConfig, standardTDEE };
+          setGoalConfiguration(standardGoalConfig);
+          
+          // Navigate to nutrition recommendations 
+          console.log('🍎 [AppNavigator] Navigating to nutrition recommendations with standard TDEE');
+          navigation.navigate('NutritionRecommendation', {
+            athleteProfile,
+            goalConfiguration: standardGoalConfig,
+            selectedTDEE: standardTDEE,
+            tdeeMethod: 'standard'
+          });
+        },
+      });
     } else {
       console.log('⚠️ [AppNavigator] No goal configuration found, navigating to WeeklyBanking');
       // Fallback if no goal configuration exists

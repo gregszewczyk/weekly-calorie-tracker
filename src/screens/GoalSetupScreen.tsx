@@ -16,6 +16,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCalorieStore } from '../stores/calorieStore';
 import { GoalConfiguration, GoalMode } from '../types/GoalTypes';
+import { AthleteProfile, FitnessLevel, TrainingExperience } from '../types/AthleteTypes';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { format } from 'date-fns';
 import { enGB } from 'date-fns/locale';
@@ -67,9 +68,12 @@ const GoalSetupScreen: React.FC = () => {
 
   const { setWeeklyGoal, setGoalConfiguration, debugStore, clearAllData, goalConfiguration } = useCalorieStore();
 
-  // Helper to check if user stats are complete
+  // Helper to check if user stats are complete for basic users
   const areUserStatsComplete = () => {
-    return userStats.age && userStats.gender && userStats.weight && userStats.height && userStats.activityLevel;
+    if (performanceMode) {
+      return true; // Athletes fill this in AthleteOnboarding
+    }
+    return userStats.age && userStats.gender && userStats.height;
   };
 
   // Helper to get parsed user stats for TDEE calculation
@@ -93,8 +97,10 @@ const GoalSetupScreen: React.FC = () => {
               (targetGoals.primaryGoal === 'performance')) &&
              targetGoals.primaryGoal;
     } else {
-      // Basic users need current weight, goal type, and activity level
-      return targetGoals.currentWeight && targetGoals.primaryGoal && targetGoals.activityLevel;
+      // Basic users need current weight, goal already selected (selectedMode), and activity level
+      // For cut/bulk, also need target weight
+      const hasTargetWeight = selectedMode === 'maintenance' || targetGoals.targetWeight;
+      return targetGoals.currentWeight && selectedMode && targetGoals.activityLevel && hasTargetWeight;
     }
   };
 
@@ -164,10 +170,20 @@ const GoalSetupScreen: React.FC = () => {
       targetDate: isOpenEnded ? undefined : targetDate.toISOString().split('T')[0], // Convert Date to YYYY-MM-DD string
       weeklyDeficitTarget: 0, // AI will calculate optimal target
       isOpenEnded,
-      targetGoals: {
-        // Target goals will be collected in AthleteOnboarding for performance users
-        // or collected here for basic users
-      },
+      targetGoals: performanceMode 
+        ? {} // Will be filled by AthleteOnboarding
+        : {
+            // For basic users, convert targetGoals state to proper format
+            weight: targetGoals.currentWeight ? {
+              target: Number(targetGoals.targetWeight) || Number(targetGoals.currentWeight),
+              current: Number(targetGoals.currentWeight),
+              priority: 'primary' as const
+            } : undefined,
+            general: {
+              description: `${selectedMode} goal with ${targetGoals.activityLevel} activity level`,
+              priority: 'primary' as const
+            }
+          },
     };
 
     // If performance mode is enabled, go directly to athlete onboarding
@@ -186,7 +202,12 @@ const GoalSetupScreen: React.FC = () => {
       return;
     }
 
-    // For basic users (non-performance mode), collect simple goals first
+    // For basic users (non-performance mode), collect user stats first, then goals
+    if (!areUserStatsComplete()) {
+      setShowUserStatsForm(true);
+      return;
+    }
+    
     if (!areTargetGoalsComplete()) {
       setShowTargetGoalsForm(true);
       return;
@@ -194,12 +215,167 @@ const GoalSetupScreen: React.FC = () => {
 
     setGoalConfiguration(goalConfig);
     
-    // Basic users go directly to weekly banking after setting simple goals
-    console.log('[GoalSetup] Basic user goals collected, going to WeeklyBanking');
+    // Basic users also go through TDEE calculation and AI nutrition
+    console.log('[GoalSetup] Basic user completed setup, navigating to TDEE calculation');
     
-    // Use a simple TDEE calculation based on their goals and activity level
-    const estimatedTDEE = calculateBasicTDEE();
-    createWeeklyGoalWithTDEE(estimatedTDEE, goalConfig, false);
+    // Create basic user stats from goal setup data  
+    const basicUserStats = {
+      age: Number(userStats.age) || 30, // Use provided age or default
+      gender: userStats.gender || 'male' as const,
+      weight: Number(targetGoals.currentWeight) || 70,
+      height: Number(userStats.height) || 175, // Use provided height or default
+      activityLevel: targetGoals.activityLevel || 'moderate' as const,
+    };
+
+    // Helper functions to map activity level to realistic training values
+    const getTrainingHoursFromActivityLevel = (activityLevel: string): number => {
+      switch (activityLevel) {
+        case 'sedentary': return 0;
+        case 'light': return 2;
+        case 'moderate': return 4;
+        case 'active': return 6;
+        case 'very_active': return 8;
+        default: return 3;
+      }
+    };
+
+    const getSessionsFromActivityLevel = (activityLevel: string): number => {
+      switch (activityLevel) {
+        case 'sedentary': return 0;
+        case 'light': return 2;
+        case 'moderate': return 3;
+        case 'active': return 5;
+        case 'very_active': return 6;
+        default: return 3;
+      }
+    };
+
+    const getFitnessLevelFromActivityLevel = (activityLevel: string): FitnessLevel => {
+      switch (activityLevel) {
+        case 'sedentary': return 'beginner';
+        case 'light': return 'beginner';
+        case 'moderate': return 'novice';
+        case 'active': return 'intermediate';
+        case 'very_active': return 'advanced';
+        default: return 'beginner';
+      }
+    };
+
+    const getExperienceFromActivityLevel = (activityLevel: string): TrainingExperience => {
+      switch (activityLevel) {
+        case 'sedentary': return 'less-than-6-months';
+        case 'light': return 'less-than-6-months';
+        case 'moderate': return '6-months-to-1-year';
+        case 'active': return '1-to-2-years';
+        case 'very_active': return '2-to-5-years';
+        default: return 'less-than-6-months';
+      }
+    };
+
+    // Create minimal athlete profile for basic users
+    const createMinimalAthleteProfile = (selectedTDEE: number): AthleteProfile => {
+      const now = new Date();
+      return {
+        id: Date.now().toString(),
+        personalInfo: {
+          name: 'Basic User',
+          profileCreated: now,
+          lastUpdated: now,
+          dateOfBirth: new Date(now.getFullYear() - Number(basicUserStats.age), 0, 1),
+        },
+        physicalStats: {
+          age: Number(basicUserStats.age),
+          gender: basicUserStats.gender,
+          weight: Number(basicUserStats.weight),
+          height: Number(basicUserStats.height),
+          bodyFatPercentage: undefined, // Not collected for basic users
+        },
+        trainingProfile: {
+          primarySport: 'general-fitness', // Valid SportType for basic users
+          secondarySports: [],
+          // Map activity level to realistic training values
+          weeklyTrainingHours: getTrainingHoursFromActivityLevel(basicUserStats.activityLevel),
+          sessionsPerWeek: getSessionsFromActivityLevel(basicUserStats.activityLevel),
+          currentFitnessLevel: getFitnessLevelFromActivityLevel(basicUserStats.activityLevel),
+          trainingExperience: getExperienceFromActivityLevel(basicUserStats.activityLevel),
+          trainingPhaseFocus: 'base-building',
+          preferredTrainingDays: ['monday', 'wednesday', 'friday'],
+          sessionDuration: {
+            average: 60,
+            minimum: 30,
+            maximum: 90,
+          },
+        },
+        performanceGoals: [
+          {
+            eventType: 'body-composition',
+            targetOutcome: selectedMode === 'cut' ? 'Weight Loss' : selectedMode === 'bulk' ? 'Weight Gain' : 'Weight Maintenance',
+            currentPerformanceLevel: 'recreational',
+            specificMetrics: {
+              weight: Number(targetGoals.targetWeight) || Number(basicUserStats.weight),
+            },
+            priorityLevel: 'high',
+          }
+        ],
+        nutritionPreferences: {
+          dietaryRestrictions: [],
+          allergies: [],
+          preferences: [],
+          supplementsCurrently: [],
+          mealPrepPreference: 'minimal',
+        },
+        activityLevel: {
+          occupationActivityLevel: 'sedentary',
+          sleepHours: 8,
+          stressLevel: 'moderate',
+        },
+        trackingPreferences: {
+          weighInFrequency: 'weekly',
+          progressPhotoFrequency: 'monthly',
+          measurementFrequency: 'monthly',
+          performanceTestFrequency: 'quarterly',
+        },
+      };
+    };
+
+    // Navigate to TDEE comparison with basic user data
+    navigation.navigate('EnhancedTDEEComparison', {
+      athleteProfile: createMinimalAthleteProfile(2000), // Temporary TDEE for profile creation
+      userStats: basicUserStats,
+      goalConfig,
+      onAcceptEnhanced: (selectedTDEE: number) => {
+        console.log('✅ [GoalSetup] Basic user selected enhanced TDEE:', selectedTDEE);
+        const finalGoalConfig = { ...goalConfig, enhancedTDEE: selectedTDEE };
+        setGoalConfiguration(finalGoalConfig);
+        
+        // Create minimal athlete profile for nutrition screen
+        const minimalAthleteProfile = createMinimalAthleteProfile(selectedTDEE);
+        
+        // Navigate to AI nutrition recommendations
+        navigation.navigate('NutritionRecommendation', {
+          athleteProfile: minimalAthleteProfile,
+          goalConfiguration: finalGoalConfig,
+          selectedTDEE,
+          tdeeMethod: 'enhanced'
+        });
+      },
+      onUseStandard: (standardTDEE: number) => {
+        console.log('📊 [GoalSetup] Basic user chose standard TDEE:', standardTDEE);
+        const standardGoalConfig = { ...goalConfig, standardTDEE };
+        setGoalConfiguration(standardGoalConfig);
+        
+        // Create minimal athlete profile for nutrition screen
+        const minimalAthleteProfile = createMinimalAthleteProfile(standardTDEE);
+        
+        // Navigate to AI nutrition recommendations  
+        navigation.navigate('NutritionRecommendation', {
+          athleteProfile: minimalAthleteProfile,
+          goalConfiguration: standardGoalConfig,
+          selectedTDEE: standardTDEE,
+          tdeeMethod: 'standard'
+        });
+      },
+    });
   };
 
   const createWeeklyGoalWithTDEE = (dailyBaseline: number, goalConfig: GoalConfiguration, isEnhanced: boolean) => {
@@ -790,6 +966,120 @@ const GoalSetupScreen: React.FC = () => {
         </View>
       </ScrollView>
       
+      {/* User Stats Modal - for basic users */}
+      {showUserStatsForm && (
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+                Personal Information
+              </Text>
+              <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+                We need this information to calculate your accurate daily calorie needs.
+              </Text>
+            </View>
+
+            <ScrollView style={styles.modalScrollView}>
+              {/* Age */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Age (years)</Text>
+                <TextInput
+                  style={[styles.input, { 
+                    backgroundColor: theme.colors.card, 
+                    color: theme.colors.text,
+                    borderColor: theme.colors.border 
+                  }]}
+                  value={userStats.age}
+                  onChangeText={(text) => setUserStats(prev => ({ ...prev, age: text }))}
+                  placeholder="e.g., 28"
+                  placeholderTextColor={theme.colors.textSecondary}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Gender */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Gender</Text>
+                <View style={styles.genderOptions}>
+                  {[
+                    { key: 'male', label: 'Male' },
+                    { key: 'female', label: 'Female' }
+                  ].map((option) => (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[
+                        styles.genderOption,
+                        {
+                          backgroundColor: userStats.gender === option.key 
+                            ? theme.colors.primary 
+                            : theme.colors.card,
+                          borderColor: userStats.gender === option.key 
+                            ? theme.colors.primary 
+                            : theme.colors.border
+                        }
+                      ]}
+                      onPress={() => setUserStats(prev => ({ ...prev, gender: option.key as 'male' | 'female' }))}
+                    >
+                      <Text style={[
+                        styles.genderOptionText,
+                        { color: userStats.gender === option.key ? theme.colors.buttonText : theme.colors.text }
+                      ]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Height */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Height (cm)</Text>
+                <TextInput
+                  style={[styles.input, { 
+                    backgroundColor: theme.colors.card, 
+                    color: theme.colors.text,
+                    borderColor: theme.colors.border 
+                  }]}
+                  value={userStats.height}
+                  onChangeText={(text) => setUserStats(prev => ({ ...prev, height: text }))}
+                  placeholder="e.g., 175"
+                  placeholderTextColor={theme.colors.textSecondary}
+                  keyboardType="numeric"
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: theme.colors.border }]}
+                onPress={() => setShowUserStatsForm(false)}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.modalContinueButton, 
+                  { 
+                    backgroundColor: areUserStatsComplete() ? theme.colors.primary : theme.colors.textSecondary,
+                    opacity: areUserStatsComplete() ? 1 : 0.6 
+                  }
+                ]}
+                onPress={() => {
+                  if (areUserStatsComplete()) {
+                    setShowUserStatsForm(false);
+                    setShowTargetGoalsForm(true);
+                  }
+                }}
+                disabled={!areUserStatsComplete()}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.colors.buttonText }]}>Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
       {/* Goals Modal - different for basic vs performance users */}
       {showTargetGoalsForm && (
         <View style={styles.modalOverlay}>
@@ -872,54 +1162,25 @@ const GoalSetupScreen: React.FC = () => {
                 </View>
               )}
 
-              {/* Primary Goal Type */}
+              {/* Goal already selected on main screen - no need to ask again */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-                  {performanceMode ? 'Primary Focus' : 'What\'s your goal?'}
+                  Selected Goal
                 </Text>
-                <View style={styles.goalOptions}>
-                  {(performanceMode ? [
-                    { key: 'weight', label: 'Weight Loss/Gain', icon: 'scale-outline' },
-                    { key: 'bodyFat', label: 'Body Fat %', icon: 'fitness-outline' },
-                    { key: 'performance', label: 'Performance Only', icon: 'trophy-outline' }
-                  ] : [
-                    { key: 'weight', label: 'Lose Weight', icon: 'arrow-down-outline' },
-                    { key: 'maintain', label: 'Maintain Weight', icon: 'remove-outline' },
-                    { key: 'gain', label: 'Gain Weight', icon: 'arrow-up-outline' }
-                  ]).map(option => (
-                    <TouchableOpacity
-                      key={option.key}
-                      style={[
-                        styles.goalOption,
-                        { 
-                          backgroundColor: targetGoals.primaryGoal === option.key 
-                            ? theme.colors.primary + '20' 
-                            : theme.colors.card,
-                          borderColor: targetGoals.primaryGoal === option.key 
-                            ? theme.colors.primary 
-                            : theme.colors.border
-                        }
-                      ]}
-                      onPress={() => setTargetGoals(prev => ({ ...prev, primaryGoal: option.key as any }))}
-                    >
-                      <Ionicons 
-                        name={option.icon as any} 
-                        size={20} 
-                        color={targetGoals.primaryGoal === option.key ? theme.colors.primary : theme.colors.textSecondary} 
-                      />
-                      <Text style={[
-                        styles.goalOptionText,
-                        { color: targetGoals.primaryGoal === option.key ? theme.colors.primary : theme.colors.text }
-                      ]}>
-                        {option.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                <View style={[styles.selectedGoalDisplay, { backgroundColor: theme.colors.primary + '20', borderColor: theme.colors.primary }]}>
+                  <Ionicons 
+                    name={selectedMode === 'cut' ? 'arrow-down-outline' : selectedMode === 'bulk' ? 'arrow-up-outline' : 'remove-outline'} 
+                    size={20} 
+                    color={theme.colors.primary} 
+                  />
+                  <Text style={[styles.selectedGoalText, { color: theme.colors.primary }]}>
+                    {selectedMode === 'cut' ? 'Lose Weight' : selectedMode === 'bulk' ? 'Gain Weight' : 'Maintain Weight'}
+                  </Text>
                 </View>
               </View>
 
-              {/* Target Weight */}
-              {targetGoals.primaryGoal === 'weight' && (
+              {/* Target Weight - show for cut/bulk, not maintenance */}
+              {!performanceMode && (selectedMode === 'cut' || selectedMode === 'bulk') && (
                 <View style={styles.inputGroup}>
                   <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Target Weight (kg)</Text>
                   <TextInput
@@ -937,8 +1198,8 @@ const GoalSetupScreen: React.FC = () => {
                 </View>
               )}
 
-              {/* Body Fat Goals */}
-              {targetGoals.primaryGoal === 'bodyFat' && (
+              {/* Body Fat Goals - only for performance mode */}
+              {performanceMode && targetGoals.primaryGoal === 'bodyFat' && (
                 <>
                   <View style={styles.inputGroup}>
                     <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Current Body Fat % (optional)</Text>
@@ -973,8 +1234,8 @@ const GoalSetupScreen: React.FC = () => {
                 </>
               )}
 
-              {/* Performance Only Message */}
-              {targetGoals.primaryGoal === 'performance' && (
+              {/* Performance Only Message - only for performance mode */}
+              {performanceMode && targetGoals.primaryGoal === 'performance' && (
                 <View style={styles.inputGroup}>
                   <Text style={[styles.inputHelper, { color: theme.colors.textSecondary }]}>
                     Focus on performance goals only. You can set race times and training targets in the athlete setup.
@@ -1698,6 +1959,18 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
+  selectedGoalDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+  },
+  selectedGoalText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
   modalActions: {
     flexDirection: 'row',
     gap: 12,
@@ -1738,6 +2011,24 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   activityOptionDesc: {
     fontSize: 14,
     lineHeight: 18,
+  },
+  
+  // Gender option styles
+  genderOptions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  genderOption: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  genderOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

@@ -92,6 +92,9 @@ interface CalorieStore {
   initializeWeek: (weekStartDate?: Date) => void;
   clearError: () => void;
   
+  // NEW: Weekly balance carryover
+  calculatePreviousWeekBalance: (previousWeekData: DailyCalorieData[], previousWeekGoal: WeeklyCalorieGoal) => number;
+  
   // Historical data methods
   getAverageCalorieBurn: (days?: number) => number;
   getAverageCalorieIntake: (days?: number) => number;
@@ -113,7 +116,7 @@ interface CalorieStore {
   // Recovery management methods
   checkForOvereatingEvent: (date?: string) => OvereatingEvent | null;
   acknowledgeOvereatingEvent: (eventId: string) => void;
-  createRecoveryPlan: (eventId: string) => RecoveryPlan | null;
+  createRecoveryPlan: (eventId: string) => Promise<RecoveryPlan | null>;
   selectRecoveryOption: (recoveryPlanId: string, optionId: string) => void;
   startRecoverySession: (recoveryPlanId: string, optionId: string) => void;
   updateRecoverySettings: (settings: Partial<RecoveryState['settings']>) => void;
@@ -265,7 +268,10 @@ export const useCalorieStore = create<CalorieStore>()(
         let todayTarget = lockedTarget;
         if (!todayTarget) {
           const redistribution = get().getCalorieRedistribution();
-          todayTarget = redistribution?.recommendedDailyTargets[0] || 2450; // fallback to baseline
+          const currentWeekGoal = get().currentWeekGoal;
+          todayTarget = redistribution?.recommendedDailyTargets[0] || 
+                       currentWeekGoal?.dailyBaseline || 
+                       get().getReasonableCalorieFallback();
         }
         
         const consumed = todayData.consumed;
@@ -332,7 +338,9 @@ export const useCalorieStore = create<CalorieStore>()(
         
         // Calculate daily average for remaining days (excluding today's locked target)
         const lockedTarget = get().getLockedDailyTarget();
-        const todayTarget = lockedTarget || 2450;
+        const todayTarget = lockedTarget || 
+                           currentWeekGoal?.dailyBaseline || 
+                           get().getReasonableCalorieFallback();
         
         // For future days calculation, subtract today's target from total remaining
         const remainingForFutureDays = totalRemaining - todayTarget;
@@ -349,7 +357,9 @@ export const useCalorieStore = create<CalorieStore>()(
         const avgDailyBurned = Math.round(totalBurned / nonZeroDays);
         
         // Simple safe to eat calculation using locked target or fallback
-        const safeToEatToday = lockedTarget || 2450;
+        const safeToEatToday = lockedTarget || 
+                              currentWeekGoal?.dailyBaseline || 
+                              get().getReasonableCalorieFallback();
         
         console.log('💰 [CalorieBankStatus] Banking system re-enabled - basic calculations only');
         
@@ -988,8 +998,8 @@ export const useCalorieStore = create<CalorieStore>()(
             set({ currentWeekGoal: updatedGoal });
             console.log(`   Set currentWeekAllowance to ${proportionalAllowance} for ${daysRemaining} remaining days`);
           }
-          // Monday reset: Update currentWeekAllowance to full amount if it's Monday
-          else if (isMonday && isWeekStart && currentWeekGoal.currentWeekAllowance !== currentWeekGoal.weeklyAllowance) {
+          // Monday reset: Check if we've moved to a new week (week start date has changed)
+          else if (isMonday && currentWeekGoal.weekStartDate !== weekStart) {
             console.log('📅 [CalorieStore] Monday reset: updating currentWeekAllowance to full weekly allowance');
             console.log(`   Previous: ${currentWeekGoal.currentWeekAllowance} → New: ${currentWeekGoal.weeklyAllowance}`);
             
@@ -998,11 +1008,20 @@ export const useCalorieStore = create<CalorieStore>()(
             const oldDataToRemove = get().weeklyData.filter(day => !currentWeekDates.includes(day.date));
             console.log('🗑️ [CalorieStore] Clearing old weekly data:', oldDataToRemove.map(d => `${d.date}(${d.consumed}cal)`));
             
+            // Calculate previous week balance for carryover
+            let carryoverBalance = 0;
+            if (oldDataToRemove.length > 0) {
+              carryoverBalance = get().calculatePreviousWeekBalance(oldDataToRemove, currentWeekGoal);
+              console.log(`💰 [CalorieStore] Previous week balance: ${carryoverBalance} (will be applied to new week)`);
+            }
+            
             const updatedGoal = {
               ...currentWeekGoal,
-              currentWeekAllowance: currentWeekGoal.weeklyAllowance, // Reset to full weekly allowance on Monday
+              currentWeekAllowance: currentWeekGoal.weeklyAllowance + carryoverBalance, // Apply carryover to new week allowance
               weekStartDate: weekStart // Update to current week start date
             };
+            
+            console.log(`📊 [CalorieStore] New week allowance: ${currentWeekGoal.weeklyAllowance} + ${carryoverBalance} = ${updatedGoal.currentWeekAllowance}`);
             
             // Update goal and clear old data
             set(state => ({
@@ -1011,7 +1030,7 @@ export const useCalorieStore = create<CalorieStore>()(
             }));
           }
           // Alternative: Check if we need to reset for new week even if stored weekStartDate is old
-          else if (isMonday && currentWeekGoal.weekStartDate !== weekStart && currentWeekGoal.currentWeekAllowance !== currentWeekGoal.weeklyAllowance) {
+          else if (isMonday && currentWeekGoal.weekStartDate !== weekStart) {
             console.log('📅 [CalorieStore] New week detected: updating for new week start');
             console.log(`   Old week start: ${currentWeekGoal.weekStartDate} → New: ${weekStart}`);
             console.log(`   Previous allowance: ${currentWeekGoal.currentWeekAllowance} → New: ${currentWeekGoal.weeklyAllowance}`);
@@ -1021,11 +1040,20 @@ export const useCalorieStore = create<CalorieStore>()(
             const oldDataToRemove = get().weeklyData.filter(day => !currentWeekDates.includes(day.date));
             console.log('🗑️ [CalorieStore] Clearing old weekly data:', oldDataToRemove.map(d => `${d.date}(${d.consumed}cal)`));
             
+            // Calculate previous week balance for carryover
+            let carryoverBalance = 0;
+            if (oldDataToRemove.length > 0) {
+              carryoverBalance = get().calculatePreviousWeekBalance(oldDataToRemove, currentWeekGoal);
+              console.log(`💰 [CalorieStore] Previous week balance: ${carryoverBalance} (will be applied to new week)`);
+            }
+            
             const updatedGoal = {
               ...currentWeekGoal,
-              currentWeekAllowance: currentWeekGoal.weeklyAllowance, // Reset to full weekly allowance
+              currentWeekAllowance: currentWeekGoal.weeklyAllowance + carryoverBalance, // Apply carryover to new week allowance
               weekStartDate: weekStart // Update to current week start date
             };
+            
+            console.log(`📊 [CalorieStore] New week allowance: ${currentWeekGoal.weeklyAllowance} + ${carryoverBalance} = ${updatedGoal.currentWeekAllowance}`);
             
             // Update goal and clear old data
             set(state => ({
@@ -1312,6 +1340,28 @@ export const useCalorieStore = create<CalorieStore>()(
       isSleepDataAvailable: () => {
         // For now, return false - this will be updated when sleep integration is fully connected
         return false;
+      },
+
+      // NEW: Weekly balance carryover calculation
+      calculatePreviousWeekBalance: (previousWeekData: DailyCalorieData[], previousWeekGoal: WeeklyCalorieGoal) => {
+        console.log('🔄 [CalorieStore] Calculating previous week balance for carryover');
+        console.log(`   Previous week goal: ${previousWeekGoal.weeklyAllowance} allowance`);
+        console.log(`   Previous week data points: ${previousWeekData.length}`);
+        
+        // Calculate total net calories used in previous week
+        const totalConsumed = previousWeekData.reduce((sum, day) => sum + day.consumed, 0);
+        const totalBurned = previousWeekData.reduce((sum, day) => sum + day.burned, 0);
+        const netCaloriesUsed = totalConsumed - totalBurned;
+        
+        // Calculate the balance (positive = surplus/debt, negative = unused calories)
+        const balance = netCaloriesUsed - previousWeekGoal.currentWeekAllowance;
+        
+        console.log(`   Total consumed: ${totalConsumed}, total burned: ${totalBurned}`);
+        console.log(`   Net calories used: ${netCaloriesUsed}`);
+        console.log(`   Week allowance: ${previousWeekGoal.currentWeekAllowance}`);
+        console.log(`   Balance to carry over: ${balance} (positive = debt, negative = surplus)`);
+        
+        return balance;
       },
 
       getAverageCalorieBurn: (days: number = 30) => {
@@ -1659,7 +1709,9 @@ export const useCalorieStore = create<CalorieStore>()(
         
         // Calculate current redistribution target WITHOUT calling getCalorieBankStatus()
         const redistribution = get().getCalorieRedistribution();
-        const redistributionTarget = redistribution?.recommendedDailyTargets[0] || 2450;
+        const redistributionTarget = redistribution?.recommendedDailyTargets[0] || 
+                                     get().currentWeekGoal?.dailyBaseline || 
+                                     get().getReasonableCalorieFallback();
         
         // Lock this target for the day
         set(state => ({
@@ -1859,11 +1911,32 @@ export const useCalorieStore = create<CalorieStore>()(
 
         console.log(`🚨 [checkForOvereatingEvent] Using locked target for detection: ${correctDailyTarget} (locked: ${lockedTarget !== null ? 'YES' : 'JUST_LOCKED'}, static: ${todayData.target})`);
 
-        const overeatingEvent = BingeRecoveryCalculator.detectOvereatingEvent(
-          todayData.consumed,
-          correctDailyTarget,
-          checkDate
-        );
+        // Get weekly progress for enhanced detection
+        const weeklyProgress = get().getCurrentWeekProgress();
+        
+        // Calculate days elapsed from weekly data
+        const today = new Date();
+        const weekStart = new Date(currentWeekGoal.weekStartDate);
+        const daysElapsed = Math.floor((today.getTime() - weekStart.getTime()) / (1000 * 60 * 60 * 24));
+        
+        const overeatingEvent = weeklyProgress 
+          ? BingeRecoveryCalculator.detectOvereatingEventEnhanced(
+              todayData.consumed,
+              correctDailyTarget,
+              todayData.burned,
+              checkDate,
+              currentWeekGoal,
+              {
+                totalConsumed: weeklyProgress.totalConsumed,
+                totalBurned: weeklyProgress.totalBurned,
+                daysElapsed: Math.max(0, Math.min(6, daysElapsed))
+              }
+            )
+          : BingeRecoveryCalculator.detectOvereatingEvent(
+              todayData.consumed,
+              correctDailyTarget,
+              checkDate
+            );
         
         if (overeatingEvent) {
           // Add to recovery state
@@ -1902,8 +1975,8 @@ export const useCalorieStore = create<CalorieStore>()(
         }));
       },
 
-      createRecoveryPlan: (eventId: string): RecoveryPlan | null => {
-        const { recoveryState, currentWeekGoal } = get();
+      createRecoveryPlan: async (eventId: string): Promise<RecoveryPlan | null> => {
+        const { recoveryState, currentWeekGoal, weeklyData, goalConfiguration } = get();
         const event = recoveryState.recentOvereatingEvents.find(e => e.id === eventId);
         
         if (!event || !currentWeekGoal) {
@@ -1915,7 +1988,44 @@ export const useCalorieStore = create<CalorieStore>()(
           currentWeekGoal
         );
         
-        // Store the recovery plan
+        // Generate AI activity suggestions in the background
+        const aiService = new (await import('../services/RecoveryActivityAIService')).RecoveryActivityAIService();
+        
+        try {
+          // Extract recent workout sessions from weekly data for AI analysis
+          const recentSessions = weeklyData
+            .flatMap(day => day.workouts || [])
+            .slice(-7) // Last 7 sessions
+            .map(workout => ({
+              id: workout.id,
+              sport: workout.sport, // Use the sport field from WorkoutSession
+              duration: workout.duration || 30, // Default 30min if not specified
+              intensity: 'moderate' as const, // Default intensity
+              sessionType: workout.name,
+              completed: true
+            }));
+          
+          const userWeight = goalConfiguration?.athleteConfig?.profile.physicalStats.weight || 70; // Default fallback weight
+          
+          const aiSuggestions = await aiService.generateActivitySuggestions({
+            overeatingEvent: event,
+            weeklyGoal: currentWeekGoal,
+            athleteProfile: goalConfiguration?.athleteConfig?.profile,
+            recentTrainingSessions: recentSessions,
+            excessCalories: event.excessCalories,
+            userWeight
+          });
+          
+          if (aiSuggestions.length > 0) {
+            recoveryPlan.aiActivitySuggestions = aiSuggestions;
+            console.log('🤖 [Recovery] AI generated', aiSuggestions.length, 'activity suggestions');
+          }
+        } catch (error) {
+          console.log('⚠️ [Recovery] AI suggestions failed, continuing without them:', error);
+          // Continue without AI suggestions - no fallback needed per requirements
+        }
+        
+        // Store the recovery plan (with or without AI suggestions)
         set(state => ({
           recoveryState: {
             ...state.recoveryState,
@@ -1926,7 +2036,8 @@ export const useCalorieStore = create<CalorieStore>()(
         console.log('📋 [Recovery] Recovery plan created:', {
           planId: recoveryPlan.id,
           strategy: recoveryPlan.strategy,
-          optionsCount: recoveryPlan.rebalancingOptions.length
+          optionsCount: recoveryPlan.rebalancingOptions.length,
+          aiSuggestionsCount: recoveryPlan.aiActivitySuggestions?.length || 0
         });
         
         return recoveryPlan;
@@ -2045,11 +2156,31 @@ export const useCalorieStore = create<CalorieStore>()(
           
           if (existingEvent && Math.abs(existingEvent.excessCalories - excess) > 50) {
             // Significant change in excess - update the event
-            const updatedEvent = BingeRecoveryCalculator.detectOvereatingEvent(
-              todayData.consumed,
-              correctDailyTarget,
-              date
-            );
+            const weeklyProgress = get().getCurrentWeekProgress();
+            
+            // Calculate days elapsed from weekly data
+            const today = new Date();
+            const weekStart = new Date(currentWeekGoal.weekStartDate);
+            const daysElapsed = Math.floor((today.getTime() - weekStart.getTime()) / (1000 * 60 * 60 * 24));
+            
+            const updatedEvent = weeklyProgress 
+              ? BingeRecoveryCalculator.detectOvereatingEventEnhanced(
+                  todayData.consumed,
+                  correctDailyTarget,
+                  todayData.burned,
+                  date,
+                  currentWeekGoal,
+                  {
+                    totalConsumed: weeklyProgress.totalConsumed,
+                    totalBurned: weeklyProgress.totalBurned,
+                    daysElapsed: Math.max(0, Math.min(6, daysElapsed))
+                  }
+                )
+              : BingeRecoveryCalculator.detectOvereatingEvent(
+                  todayData.consumed,
+                  correctDailyTarget,
+                  date
+                );
             
             if (updatedEvent) {
               set(state => ({

@@ -287,6 +287,333 @@ export class PerplexityService {
   // Private Methods
 
   private buildNutritionPrompt(request: NutritionCalculationRequest): string {
+    // Determine user type and route to appropriate prompt
+    const isBasicUser = !request.currentGoal.performanceMode;
+    const userCategory = this.getUserCategory(request);
+    const goalType = request.currentGoal.mode;
+    
+    console.log(`🎯 [PerplexityService] Building prompt for: ${userCategory} user with ${goalType} goal`);
+    
+    if (isBasicUser) {
+      return this.buildBasicUserPrompt(request);
+    } else {
+      return this.buildAthletePrompt(request);
+    }
+  }
+
+  private getUserCategory(request: NutritionCalculationRequest): 'basic' | 'athlete' {
+    return request.currentGoal.performanceMode ? 'athlete' : 'basic';
+  }
+
+  // COMMENTED OUT - OLD BASIC USER PROMPT
+  /*
+  private buildBasicUserPrompt(request: NutritionCalculationRequest): string {
+    const { athleteProfile, currentGoal, historicalData } = request;
+    
+    // Get basic user-friendly activity level description
+    const getActivityDescription = (hours: number): string => {
+      if (hours <= 2) return 'Sedentary (office work, minimal exercise)';
+      if (hours <= 4) return 'Light activity (1-3 days exercise/week)';
+      if (hours <= 6) return 'Moderate activity (3-5 days exercise/week)';
+      if (hours <= 10) return 'Active (6-7 days exercise/week)';
+      return 'Very active (daily exercise + physical job)';
+    };
+
+    // Basic user info (user-friendly for beginners)
+    const userInfo = `
+User Profile:
+- Age: ${athleteProfile.physicalStats.age} years old
+- Weight: ${athleteProfile.physicalStats.weight}kg  
+- Height: ${athleteProfile.physicalStats.height}cm
+- Gender: ${athleteProfile.physicalStats.gender}
+- Activity Level: ${getActivityDescription(athleteProfile.trainingProfile.weeklyTrainingHours)}
+- Goal: ${currentGoal.mode === 'cut' ? 'Lose weight' : currentGoal.mode === 'bulk' ? 'Gain weight' : 'Maintain current weight'}`;
+
+    // Get selected TDEE 
+    let selectedTDEE = request.selectedTDEE;
+    if (!selectedTDEE) {
+      // Fallback calculation
+      const bmr = this.calculateBMR(athleteProfile.physicalStats);
+      selectedTDEE = Math.round(this.calculateTDEE(bmr, athleteProfile.trainingProfile));
+    }
+
+    // Get target weight - for basic users it's in performance goals or use current weight
+    const currentWeight = athleteProfile.physicalStats.weight;
+    const targetWeight = athleteProfile.performanceGoals?.[0]?.specificMetrics?.weight || currentWeight;
+    
+    // Get goal from targetGoals if available
+    const goalTargets = currentGoal.targetGoals;
+    const actualTargetWeight = goalTargets?.weight?.target || targetWeight;
+
+    const goalDetails = `
+Target:
+- Daily Calories Available: ${selectedTDEE} kcal/day
+- Goal Type: ${currentGoal.mode}
+- Current Weight: ${currentWeight}kg
+- Target Weight: ${actualTargetWeight}kg
+- Weight Change Needed: ${currentGoal.mode === 'maintenance' ? '0kg (maintain current weight)' : `${(actualTargetWeight - currentWeight).toFixed(1)}kg`}
+- Timeline: ${currentGoal.targetDate || 'No specific deadline (flexible approach)'}`;
+
+
+    return `You are a nutrition expert helping a beginner achieve their weight goal. Create simple, practical nutrition plans based on their TDEE of ${selectedTDEE} calories per day.
+
+${userInfo}
+
+${goalDetails}
+
+**TASK:** Create 3 nutrition approaches. Calculate weekly weight ${currentGoal.mode === 'cut' ? 'loss' : currentGoal.mode === 'bulk' ? 'gain' : 'change'} rates and timelines using proper math.
+
+**MATH REQUIREMENT - SHOW YOUR CALCULATIONS:**
+Weight change needed: ${currentWeight}kg → ${actualTargetWeight}kg = ${(actualTargetWeight - currentWeight).toFixed(1)}kg total change
+For each approach, choose a weekly rate, then calculate: Timeline = Total change ÷ Weekly rate
+
+**RESPONSE FORMAT (MUST MATCH PERFORMANCE MODE FORMAT EXACTLY):**
+
+### CONSERVATIVE APPROACH
+- Daily Calories: X kcal
+- Weekly Weight Change Rate: X kg/week
+- Timeline Assessment: At X kg/week, ~X weeks needed
+- Protein: Xg (X.Xg/kg bodyweight)
+- Carbs: Xg 
+- Fats: Xg
+
+### STANDARD APPROACH
+- Daily Calories: X kcal
+- Weekly Weight Change Rate: X kg/week
+- Timeline Assessment: At X kg/week, ~X weeks needed
+- Protein: Xg (X.Xg/kg bodyweight)
+- Carbs: Xg 
+- Fats: Xg
+
+### AGGRESSIVE APPROACH
+- Daily Calories: X kcal
+- Weekly Weight Change Rate: X kg/week
+- Timeline Assessment: At X kg/week, ~X weeks needed
+- Protein: Xg (X.Xg/kg bodyweight)
+- Carbs: Xg 
+- Fats: Xg
+
+**SIMPLE MEAL STRUCTURE:**
+- Meals per day: [NUMBER] meals
+- Hydration: [LITERS] liters water daily
+- Focus foods: [LIST 4 SIMPLE FOODS]
+
+**BEGINNER SUCCESS TIPS:**
+- [TIP 1 - keep simple and actionable]
+- [TIP 2 - keep simple and actionable]
+- [TIP 3 - keep simple and actionable]
+
+**CRITICAL TIMELINE REQUIREMENTS:**
+- Timeline MUST be expressed as exact numbers: "Timeline Assessment: At X kg/week, ~X weeks needed"
+- Calculate specific weeks for each approach - they should be DIFFERENT
+- Conservative should take LONGER (more weeks), Aggressive should be FASTER (fewer weeks)
+- ${currentGoal.targetDate ? `IMPORTANT: User has target date ${currentGoal.targetDate} - ensure approaches consider this deadline` : 'User has flexible timeline - provide realistic options'}
+- NEVER use vague terms - always specify exact weeks needed
+
+**MATH CALCULATION PROCESS:**
+STEP 1: Determine appropriate weekly rates for each approach (conservative = slower, aggressive = faster)
+STEP 2: For each rate, calculate: Timeline = Total weight change ÷ Weekly rate
+STEP 3: Verify the math works: Weekly rate × Timeline = Total weight change
+${currentGoal.targetDate ? `STEP 4: Check if timeline fits user's target date of ${currentGoal.targetDate}` : ''}
+
+**EXAMPLE CALCULATION:**
+If user needs to change 8kg total:
+- Choose weekly rate (e.g., 0.4kg/week)  
+- Calculate timeline: 8kg ÷ 0.4kg/week = 20 weeks
+- Verify: 0.4kg/week × 20 weeks = 8kg ✓
+
+CRITICAL: Pick realistic weekly rates based on the goal type and user's timeline preferences. Do the division correctly!`;
+  }
+  */
+  
+  // NEW BASIC USER PROMPT - COPIED FROM ATHLETE PROMPT
+  private buildBasicUserPrompt(request: NutritionCalculationRequest): string {
+    const { 
+      athleteProfile, 
+      currentGoal, 
+      recentTrainingData, 
+      preferenceLevel, 
+     // periodizationPhase, 
+      garminData, 
+      // garminEnhancedContext, // Removed for proxy solution
+      appleHealthContext,
+      historicalData 
+    } = request;
+    
+    // Helper function for basic users
+    const getActivityDescription = (hours: number): string => {
+      if (hours <= 2) return 'Sedentary (office work, minimal exercise)';
+      if (hours <= 4) return 'Light activity (1-3 days exercise/week)';
+      if (hours <= 6) return 'Moderate activity (3-5 days exercise/week)';
+      if (hours <= 10) return 'Active (6-7 days exercise/week)';
+      return 'Very active (daily exercise + physical job)';
+    };
+    
+    const userInfo = `
+User Profile:
+- Age: ${athleteProfile.physicalStats.age}
+- Weight: ${athleteProfile.physicalStats.weight}kg
+- Height: ${athleteProfile.physicalStats.height}cm
+- Gender: ${athleteProfile.physicalStats.gender}
+- Activity Level: ${getActivityDescription(athleteProfile.trainingProfile.weeklyTrainingHours)}
+- Weekly Exercise: ${athleteProfile.trainingProfile.weeklyTrainingHours} hours`;
+
+
+    const goalInfo = `
+Current Goal:
+- Mode: ${currentGoal.mode}
+- Timeline: ${currentGoal.targetDate ? `Target date: ${currentGoal.targetDate}` : 'Open-ended'}`;
+
+    const trainingInfo = recentTrainingData?.length 
+      ? `Recent Training Data: ${recentTrainingData.length} workouts logged`
+      : 'No recent training data available';
+
+    // Enhanced Garmin data integration
+    const garminInfo = this.buildGarminDataSection(garminData, null); // Enhanced context removed for proxy solution
+
+    // Apple Health data integration
+    const appleHealthInfo = this.buildAppleHealthDataSection(appleHealthContext);
+
+    // Use the TDEE value the user actually selected (could be Standard, Enhanced, or Athlete Profile)
+    // If no selected TDEE, calculate Standard TDEE as fallback (should always be possible)
+    let selectedTDEEValue = request.selectedTDEE;
+    if (!selectedTDEEValue) {
+      // Try enhanced data first
+      if (currentGoal.enhancedDataUsed?.enhancedTDEE) {
+        selectedTDEEValue = currentGoal.enhancedDataUsed.enhancedTDEE;
+      } else if (historicalData?.metabolismProfile?.estimatedTDEE) {
+        selectedTDEEValue = historicalData.metabolismProfile.estimatedTDEE;
+      } else {
+        // Calculate Standard TDEE from athlete profile - should always be possible
+        const bmr = this.calculateBMR(athleteProfile.physicalStats);
+        selectedTDEEValue = Math.round(this.calculateTDEE(bmr, athleteProfile.trainingProfile));
+        console.log(`🔢 [PerplexityService] Calculated Standard TDEE as fallback: ${selectedTDEEValue} kcal/day`);
+      }
+    }
+    
+    // Determine method name - be smarter about fallbacks
+    let tdeeMethodName: 'standard' | 'enhanced' | 'athlete-profile' | 'estimated' = request.tdeeMethod || 'standard';
+    if (!request.tdeeMethod) {
+      // If we have user's selected TDEE, we might be able to infer the method
+      if (request.selectedTDEE) {
+        // This shouldn't happen if selectedTDEE exists without tdeeMethod
+        // But if it does, we can't really know which method was used
+        tdeeMethodName = 'estimated';
+      } else if (currentGoal.enhancedDataUsed?.enhancedTDEE) {
+        tdeeMethodName = 'enhanced';
+      } else if (historicalData?.metabolismProfile?.estimatedTDEE) {
+        tdeeMethodName = 'enhanced';
+      } else {
+        // Using calculated Standard TDEE as fallback
+        tdeeMethodName = 'standard';
+      }
+    }
+    const historicalInfo = `
+SELECTED TDEE ANALYSIS (CRITICAL - BASE ALL CALCULATIONS ON THIS):
+- Selected TDEE (${tdeeMethodName.toUpperCase()}): ${selectedTDEEValue} kcal/day
+- This includes ALL daily movement (walking, activities, structured workouts)
+- Data Source: ${tdeeMethodName === 'enhanced' ? 'Real Garmin device data with 10% conservative adjustment' : tdeeMethodName === 'athlete-profile' ? 'Athlete-specific calculations with training volume adjustments' : tdeeMethodName === 'estimated' ? 'Unable to determine calculation method' : 'Standard BMR × activity factor calculations'}
+- Confidence Level: ${tdeeMethodName === 'enhanced' ? 'HIGH (based on actual device measurements)' : tdeeMethodName === 'athlete-profile' ? 'HIGH (based on detailed training profile)' : tdeeMethodName === 'estimated' ? 'UNKNOWN (method unclear)' : 'MODERATE (based on activity factor estimates)'}
+
+GOAL DETAILS:
+- Mode: ${currentGoal.mode}
+- Performance Mode: NO - standard approach
+- Timeline: ${currentGoal.targetDate ? `Target date: ${currentGoal.targetDate}` : 'Open-ended goal'}
+- Goals: ${currentGoal.targetGoals?.performance?.targetMetrics?.map(m => `${m.metricName}: ${m.value} ${m.unit}`).join(', ') || 'Goals not specified - determine appropriate targets based on user profile'}`
+
+    return `NUTRITION EXPERT: Analyze the complete user profile below and determine if their goal is achievable within the specified timeframe. Provide structured recommendations ONLY - no thinking process, no explanations.
+
+${userInfo}
+
+${goalInfo}
+
+${trainingInfo}
+
+${garminInfo}
+${appleHealthInfo}
+${historicalInfo}
+
+
+Preference Level: ${preferenceLevel}
+
+CRITICAL SAFETY RULES:
+- All recommendations must be above safe minimum (1200 kcal/day for females, 1500 kcal/day for males)
+- Determine appropriate protein intake based on user's sport and goals
+- Determine safe maximum deficit based on user's profile and goals
+
+TASK: 
+1. Analyze if user's goal is achievable within their specified timeframe
+2. If YES: Provide 3 approaches (conservative/standard/aggressive) for their actual goal
+3. If NO: Suggest what IS achievable in timeframe + provide 3 approaches for that realistic goal
+
+USER'S SELECTED BASELINE:
+- TDEE: ${selectedTDEEValue} kcal/day (from ${tdeeMethodName.toUpperCase()} method)
+- Timeline: ${currentGoal.targetDate ? 'Target date: ' + currentGoal.targetDate : 'Open-ended goal'}
+
+USER'S TARGET OUTCOME:
+- Weight Goals: ${currentGoal.targetGoals?.weight ? `Current: ${currentGoal.targetGoals.weight.current}kg → Target: ${currentGoal.targetGoals.weight.target}kg` : 'None specified'}
+
+REQUIRED OUTPUT FORMAT:
+
+**GOAL FEASIBILITY ASSESSMENT:**
+ACHIEVABLE: [YES/NO]
+ANALYSIS: [2-3 sentences explaining why the goal is or isn't achievable within the timeframe]
+KEY INSIGHTS:
+- [Key insight about user's profile, training, or goals]
+- [Another key insight about their approach or timeline]
+- [Third insight about performance impact or nutrition strategy]
+CONFIDENCE: [HIGH/MEDIUM/LOW - based on data quality and goal complexity]
+WARNINGS: [Any concerns about the approach, timeline, or potential issues - if none, write "None"]
+
+**RECOMMENDED APPROACHES:**
+
+### CONSERVATIVE APPROACH: X kcal/day (X% deficit from ${selectedTDEEValue} TDEE)
+- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)
+- Training days: +Xg carbs, Rest days: -Xg carbs
+- Weekly deficit: X kcal, Timeline: X weeks (be specific - calculate exact weeks or days)
+
+### STANDARD APPROACH: X kcal/day (X% deficit from ${selectedTDEEValue} TDEE) ★ RECOMMENDED
+- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)
+- Training days: +Xg carbs, Rest days: -Xg carbs
+- Weekly deficit: X kcal, Timeline: X weeks (be specific - calculate exact weeks or days)
+
+### AGGRESSIVE APPROACH: X kcal/day (X% deficit from ${selectedTDEEValue} TDEE)
+- Protein: Xg (X.Xg/kg), Carbs: Xg (X.Xg/kg), Fats: Xg (X%)
+- Training days: +Xg carbs, Rest days: -Xg carbs
+- Weekly deficit: X kcal, Timeline: X weeks (be specific - calculate exact weeks or days)
+
+**MONITORING:** 
+Track: weight, performance metrics, energy levels. Adjust if weekly weight loss >X% or <X%.
+
+CRITICAL FORMATTING REQUIREMENTS:
+- Timeline MUST be expressed as exact numbers: "Timeline: 8 weeks" or "Timeline: 12 weeks" 
+- ALWAYS include "X weeks needed" in timeline assessment for each approach
+- Calculate specific weeks for each approach - they should be DIFFERENT
+- Conservative should take LONGER (more weeks), Aggressive should be FASTER (fewer weeks) - but no more than 2-3 weeks difference
+- Aim of all 3 approaches is to achieve the user's goal in a realistic, healthy way
+- For each approach, include both "At X kg/week, ~Y weeks needed" in timeline assessment
+- NEVER use vague terms like "Early October" or "Mid-November" - always specify weeks
+
+EXAMPLE FORMAT FOR EACH APPROACH:
+### CONSERVATIVE APPROACH
+- Daily Calories: 2400 kcal
+- Weekly Weight Loss Rate: 0.6 kg/week  
+- Timeline Assessment: At 0.6 kg/week, ~18 weeks needed
+
+### STANDARD APPROACH  
+- Daily Calories: 2200 kcal
+- Weekly Weight Loss Rate: 0.8 kg/week
+- Timeline Assessment: At 0.8 kg/week, ~14 weeks needed
+
+### AGGRESSIVE APPROACH
+- Daily Calories: 2000 kcal
+- Weekly Weight Loss Rate: 1.0 kg/week
+- Timeline Assessment: At 1.0 kg/week, ~11 weeks needed
+
+Base all calculations on user's selected TDEE of ${selectedTDEEValue} kcal/day. Calculate appropriate deficits for their specific goals and timeline.`;
+  }
+
+  private buildAthletePrompt(request: NutritionCalculationRequest): string {
     const { 
       athleteProfile, 
       currentGoal, 
@@ -371,7 +698,7 @@ SELECTED TDEE ANALYSIS (CRITICAL - BASE ALL CALCULATIONS ON THIS):
 
 GOAL DETAILS:
 - Mode: ${currentGoal.mode}
-- Performance Mode: ${currentGoal.performanceMode ? 'YES - prioritize training performance' : 'NO - standard approach'}
+- Performance Mode: NO - standard approach
 - Timeline: ${currentGoal.targetDate ? `Target date: ${currentGoal.targetDate}` : 'Open-ended goal'}
 - Goals: ${currentGoal.targetGoals?.performance?.targetMetrics?.map(m => `${m.metricName}: ${m.value} ${m.unit}`).join(', ') || 'Goals not specified - determine appropriate targets based on user profile'}`
 
@@ -885,11 +1212,19 @@ Keep recommendations evidence-based and practical.`;
     
     console.log('🔄 [PerplexityService] Using fallback calculations...');
     
-    // Fallback: Calculate base metabolic rate using Mifflin-St Jeor equation
-    const bmr = this.calculateBMR(athleteProfile.physicalStats);
-    const tdee = this.calculateTDEE(bmr, athleteProfile.trainingProfile);
-    
-    const baseCalories = Math.round(tdee);
+    // For basic users, use their selected TDEE; for athletes, calculate from profile
+    let baseCalories: number;
+    if (request.selectedTDEE && !currentGoal.performanceMode) {
+      // Basic users: use their selected TDEE from the comparison screen
+      baseCalories = request.selectedTDEE;
+      console.log('🔢 [PerplexityService] Using selected TDEE for basic user:', baseCalories);
+    } else {
+      // Athletes or fallback: calculate from profile
+      const bmr = this.calculateBMR(athleteProfile.physicalStats);
+      const tdee = this.calculateTDEE(bmr, athleteProfile.trainingProfile);
+      baseCalories = Math.round(tdee);
+      console.log('🔢 [PerplexityService] Calculated TDEE for athlete:', baseCalories);
+    }
     
     // Fallback deficits based on goal mode and athlete profile
     let baseWeeklyDeficit = 0;
@@ -909,6 +1244,140 @@ Keep recommendations evidence-based and practical.`;
       standard: this.generateRecommendation(baseCalories, weight, baseWeeklyDeficit * 1.0, 'standard', targetWeight),
       aggressive: this.generateRecommendation(baseCalories, weight, baseWeeklyDeficit * 1.3, 'aggressive', targetWeight)
     };
+  }
+
+  private generateRecommendationWithAIMacros(
+    aiCalories: number, 
+    weight: number, 
+    weeklyDeficit: number, 
+    level: string,
+    aiProteinGrams: number | null,
+    aiCarbGrams: number | null, 
+    aiFatGrams: number | null,
+    estimatedTimeline?: string, 
+    targetDate?: string,
+    aiWeeklyWeightChange?: number
+  ): NutritionRecommendation {
+    // Use AI's calorie and macro recommendations directly!
+    const dailyCalories = aiCalories;
+    
+    let proteinGrams: number;
+    let carbGrams: number;
+    let fatGrams: number;
+    
+    // Use AI macros if available, otherwise calculate fallback
+    if (aiProteinGrams && aiCarbGrams && aiFatGrams) {
+      console.log('✅ [PerplexityService] Using AI macro recommendations:', {
+        protein: aiProteinGrams,
+        carbs: aiCarbGrams,
+        fats: aiFatGrams
+      });
+      proteinGrams = aiProteinGrams;
+      carbGrams = aiCarbGrams;
+      fatGrams = aiFatGrams;
+    } else {
+      console.log('⚠️ [PerplexityService] Some AI macros missing, using hybrid approach');
+      // Hybrid: Use AI macros where available, calculate missing ones
+      
+      // Protein: Use AI value or fallback calculation
+      proteinGrams = aiProteinGrams || (() => {
+        const proteinMultiplier = level === 'conservative' ? 1.6 : level === 'standard' ? 1.8 : 2.2;
+        return Math.round(weight * proteinMultiplier);
+      })();
+      
+      // Fat: Use AI value or fallback calculation
+      fatGrams = aiFatGrams || (() => {
+        const fatPercentage = level === 'conservative' ? 30 : level === 'standard' ? 25 : 20;
+        const fatCalories = Math.round(dailyCalories * (fatPercentage / 100));
+        return Math.round(fatCalories / 9);
+      })();
+      
+      // Carbs: Use AI value or calculate remainder
+      carbGrams = aiCarbGrams || (() => {
+        const proteinCalories = proteinGrams * 4;
+        const fatCalories = fatGrams * 9;
+        const carbCalories = dailyCalories - proteinCalories - fatCalories;
+        return Math.round(carbCalories / 4);
+      })();
+    }
+    
+    // Calculate calories from final macro values
+    const proteinCalories = proteinGrams * 4;
+    const carbCalories = carbGrams * 4; 
+    const fatCalories = fatGrams * 9;
+    
+    return {
+      dailyCalories,
+      weeklyCalorieTarget: dailyCalories * 7,
+      weeklyDeficit: weeklyDeficit,
+      macronutrients: {
+        protein: { 
+          grams: proteinGrams, 
+          percentage: Math.round((proteinCalories / dailyCalories) * 100),
+          perKgBodyweight: Math.round((proteinGrams / weight) * 100) / 100
+        },
+        carbohydrates: { 
+          grams: carbGrams, 
+          percentage: Math.round((carbCalories / dailyCalories) * 100),
+          perKgBodyweight: Math.round((carbGrams / weight) * 100) / 100
+        },
+        fats: { 
+          grams: fatGrams, 
+          percentage: Math.round((fatCalories / dailyCalories) * 100),
+          perKgBodyweight: Math.round((fatGrams / weight) * 100) / 100
+        }
+      },
+      trainingDayAdjustments: {
+        preWorkout: { calories: 150, carbs: 30, protein: 10 },
+        postWorkout: { calories: 200, carbs: 40, protein: 20 },
+        totalTrainingDay: dailyCalories + 100
+      },
+      restDayCalories: Math.round(dailyCalories * 0.95),
+      estimatedWeeklyWeightChange: aiWeeklyWeightChange !== undefined ? aiWeeklyWeightChange : -weeklyDeficit / 7700, // Use AI's rate if available, otherwise calculate
+      timeToGoal: estimatedTimeline ? this.calculateEstimatedCompletionDate(estimatedTimeline, targetDate) : undefined
+    };
+  }
+
+  private extractWeeklyWeightChangeRate(content: string, level: string, goalMode: string): number | undefined {
+    const weeklyRatePatterns = [
+      // Match "~1 Kg/Week Weight Loss" format (exact AI format)
+      new RegExp(`${level}\\s+approach[\\s\\S]*?\\~?([+-]?[\\d.]+)\\s*kg\\/week\\s+weight\\s+(?:loss|gain)`, 'i'),
+      // Match "Weekly Weight Change Rate: 0.5 kg/week" format (basic users)
+      new RegExp(`${level}\\s+approach[\\s\\S]*?Weekly\\s+Weight\\s+Change\\s+Rate:\\s*([+-]?[\\d.]+)\\s*kg\\/week`, 'i'),
+      // Match "Weekly Weight Loss Rate: 0.5 kg/week" format (athletes)  
+      new RegExp(`${level}\\s+approach[\\s\\S]*?Weekly\\s+Weight\\s+(?:Loss|Gain)\\s+Rate:\\s*([+-]?[\\d.]+)\\s*kg\\/week`, 'i'),
+      // Match "(~0.44 kg/week)" format from deficit lines
+      new RegExp(`${level}\\s+approach[\\s\\S]*?\\(\\~?([+-]?[\\d.]+)\\s*kg\\/week\\)`, 'i'),
+      // Match "at~1 kg/week" format from timeline assessment (flexible spacing)
+      new RegExp(`${level}\\s+approach[\\s\\S]*?at\\s*~?([+-]?[\\d.]+)\\s*kg\\/week`, 'i'),
+      // Match "At X kg/week" format from timeline assessment (original)
+      new RegExp(`${level}\\s+approach[\\s\\S]*?At\\s+([+-]?[\\d.]+)\\s*kg\\/week`, 'i'),
+    ];
+
+    for (const pattern of weeklyRatePatterns) {
+      const match = content.match(pattern);
+      if (match) {
+        let rate = parseFloat(match[1]);
+        
+        // Apply correct sign based on goal mode
+        if (goalMode === 'cut') {
+          // For weight loss, rate should be negative (losing weight)
+          rate = Math.abs(rate) * -1;
+        } else if (goalMode === 'bulk') {
+          // For weight gain, rate should be positive (gaining weight)  
+          rate = Math.abs(rate);
+        } else {
+          // For maintenance, rate should be close to 0 but preserve AI's sign
+          // Keep the rate as-is since maintenance might have small variations
+        }
+        
+        console.log(`📊 [PerplexityService] Found AI weekly weight change rate for ${level} (${goalMode}):`, rate, 'kg/week');
+        return rate;
+      }
+    }
+
+    console.log(`⚠️ [PerplexityService] Could not extract weekly weight change rate for ${level}`);
+    return undefined;
   }
 
   private generateRecommendationFromAI(aiCalories: number, weight: number, weeklyDeficit: number, level: string, estimatedTimeline?: string, targetDate?: string): NutritionRecommendation {
@@ -1142,10 +1611,10 @@ Keep recommendations evidence-based and practical.`;
     console.log('🔍 [PerplexityService] AI response preview (first 500 chars):', content.substring(0, 500));
     
     // Remove thinking tags to get clean content
-    const cleanContent = content.replace(/<think>.*?<\/think>/gs, '').replace(/<\/think>/g, '');
+    const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/<\/think>/g, '');
     
-    // Look for AI patterns based on actual AI response format
-    const patterns = [
+    // Look for AI patterns for calories AND macros
+    const caloriePatterns = [
       // Match actual AI format: "Daily Calories:** ~2,500 kcal"
       { name: 'conservative', regex: /conservative\s+approach[\s\S]*?Daily\s+Calories:\*?\*?\s*~?([\d,]+)\s*kcal/i },
       { name: 'standard', regex: /standard\s+approach[\s\S]*?Daily\s+Calories:\*?\*?\s*~?([\d,]+)\s*kcal/i },
@@ -1164,16 +1633,50 @@ Keep recommendations evidence-based and practical.`;
       { name: 'aggressive', regex: /aggressive\s+approach[^0-9]*([\d,]+)\s*(?:kcal|cal|calories)/i },
     ];
 
+    // Macro parsing patterns for protein, carbs, fats
+    const macroPatterns = {
+      protein: [
+        // Match: "Protein: 180g (2.25g/kg)" or "- Protein: 180g"
+        { name: 'conservative', regex: /conservative\s+approach[\s\S]*?Protein:\s*([\d,]+)g/i },
+        { name: 'standard', regex: /standard\s+approach[\s\S]*?Protein:\s*([\d,]+)g/i },
+        { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?Protein:\s*([\d,]+)g/i },
+        // Alternative format: "Protein: Xg (X.Xg/kg)"
+        { name: 'conservative', regex: /conservative\s+approach[\s\S]*?-\s*Protein:\s*([\d,]+)g/i },
+        { name: 'standard', regex: /standard\s+approach[\s\S]*?-\s*Protein:\s*([\d,]+)g/i },
+        { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?-\s*Protein:\s*([\d,]+)g/i },
+      ],
+      carbs: [
+        // Match: "Carbs: 250g" or "Carbohydrates: 250g"
+        { name: 'conservative', regex: /conservative\s+approach[\s\S]*?(?:Carbs?|Carbohydrates?):\s*([\d,]+)g/i },
+        { name: 'standard', regex: /standard\s+approach[\s\S]*?(?:Carbs?|Carbohydrates?):\s*([\d,]+)g/i },
+        { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?(?:Carbs?|Carbohydrates?):\s*([\d,]+)g/i },
+        // Alternative format with dash
+        { name: 'conservative', regex: /conservative\s+approach[\s\S]*?-\s*(?:Carbs?|Carbohydrates?):\s*([\d,]+)g/i },
+        { name: 'standard', regex: /standard\s+approach[\s\S]*?-\s*(?:Carbs?|Carbohydrates?):\s*([\d,]+)g/i },
+        { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?-\s*(?:Carbs?|Carbohydrates?):\s*([\d,]+)g/i },
+      ],
+      fats: [
+        // Match: "Fats: 67g" or "Fat: 67g"
+        { name: 'conservative', regex: /conservative\s+approach[\s\S]*?Fats?:\s*([\d,]+)g/i },
+        { name: 'standard', regex: /standard\s+approach[\s\S]*?Fats?:\s*([\d,]+)g/i },
+        { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?Fats?:\s*([\d,]+)g/i },
+        // Alternative format with dash
+        { name: 'conservative', regex: /conservative\s+approach[\s\S]*?-\s*Fats?:\s*([\d,]+)g/i },
+        { name: 'standard', regex: /standard\s+approach[\s\S]*?-\s*Fats?:\s*([\d,]+)g/i },
+        { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?-\s*Fats?:\s*([\d,]+)g/i },
+      ]
+    };
+
     // Timeline parsing patterns to extract estimated completion dates/weeks
     const timelinePatterns = [
-      // Match actual AI response format: "At 0.5 kg/week, ~11 weeks needed"
+      // Match actual AI response format: "at~1 Kg/Week ,~10 Weeks Needed" (flexible spacing)
+      { name: 'conservative', regex: /conservative\s+approach[\s\S]*?at\s*~?[\d.]+\s*kg\/week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
+      { name: 'standard', regex: /standard\s+approach[\s\S]*?at\s*~?[\d.]+\s*kg\/week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
+      { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?at\s*~?[\d.]+\s*kg\/week\s*,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
+      // Match "At X kg/week, ~Y weeks needed" format (with capital A and proper spacing)
       { name: 'conservative', regex: /conservative\s+approach[\s\S]*?At\s+[\d.]+\s*kg\/week,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
       { name: 'standard', regex: /standard\s+approach[\s\S]*?At\s+[\d.]+\s*kg\/week,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
       { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?At\s+[\d.]+\s*kg\/week,\s*~?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
-      // Match completion date format: "Completion date: Late October 2025" - extract weeks from context
-      { name: 'conservative', regex: /conservative\s+approach[\s\S]*?(\d+)\s*weeks?\s*needed/i },
-      { name: 'standard', regex: /standard\s+approach[\s\S]*?(\d+)\s*weeks?\s*needed/i },
-      { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?(\d+(?:[–\-]\d+)?)\s*weeks?\s*needed/i },
       // Fallback patterns for exact format requests: "Timeline: 8 weeks"
       { name: 'conservative', regex: /conservative\s+approach[\s\S]*?Timeline:\s*~?(\d+(?:[–\-]\d+)?)\s*(?:weeks?|days?)/i },
       { name: 'standard', regex: /standard\s+approach[\s\S]*?Timeline:\s*~?(\d+(?:[–\-]\d+)?)\s*(?:weeks?|days?)/i },
@@ -1184,11 +1687,43 @@ Keep recommendations evidence-based and practical.`;
       { name: 'aggressive', regex: /aggressive\s+approach[\s\S]*?Estimated timeline:\s*~?(\d+(?:[–\-]\d+)?)\s*(?:weeks?|days?)/i },
     ];
     
-    const matches: Record<string, string> = {};
-    for (const pattern of patterns) {
+    // Parse calorie values
+    const calorieMatches: Record<string, string> = {};
+    for (const pattern of caloriePatterns) {
       const match = cleanContent.match(pattern.regex);
-      if (match && !matches[pattern.name]) {
-        matches[pattern.name] = match[1].replace(/,/g, ''); // Remove commas from numbers
+      if (match && !calorieMatches[pattern.name]) {
+        calorieMatches[pattern.name] = match[1].replace(/,/g, ''); // Remove commas from numbers
+      }
+    }
+
+    // Parse macro values
+    const macroMatches: Record<string, Record<string, string>> = {
+      protein: {},
+      carbs: {},
+      fats: {}
+    };
+
+    // Extract protein values
+    for (const pattern of macroPatterns.protein) {
+      const match = cleanContent.match(pattern.regex);
+      if (match && !macroMatches.protein[pattern.name]) {
+        macroMatches.protein[pattern.name] = match[1].replace(/,/g, '');
+      }
+    }
+
+    // Extract carb values
+    for (const pattern of macroPatterns.carbs) {
+      const match = cleanContent.match(pattern.regex);
+      if (match && !macroMatches.carbs[pattern.name]) {
+        macroMatches.carbs[pattern.name] = match[1].replace(/,/g, '');
+      }
+    }
+
+    // Extract fat values
+    for (const pattern of macroPatterns.fats) {
+      const match = cleanContent.match(pattern.regex);
+      if (match && !macroMatches.fats[pattern.name]) {
+        macroMatches.fats[pattern.name] = match[1].replace(/,/g, '');
       }
     }
 
@@ -1201,14 +1736,15 @@ Keep recommendations evidence-based and practical.`;
       }
     }
     
-    console.log('🔍 [PerplexityService] Pattern matches found:', matches);
+    console.log('🔍 [PerplexityService] Calorie matches found:', calorieMatches);
+    console.log('🥩 [PerplexityService] Macro matches found:', macroMatches);
     console.log('📅 [PerplexityService] Timeline matches found:', timelineMatches);
     
     // Try to get at least conservative recommendation
-    if (matches.conservative || matches.standard || matches.aggressive) {
-      const conservativeCals = matches.conservative ? parseInt(matches.conservative) : null;
-      const standardCals = matches.standard ? parseInt(matches.standard) : null;  
-      const aggressiveCals = matches.aggressive ? parseInt(matches.aggressive) : null;
+    if (calorieMatches.conservative || calorieMatches.standard || calorieMatches.aggressive) {
+      const conservativeCals = calorieMatches.conservative ? parseInt(calorieMatches.conservative) : null;
+      const standardCals = calorieMatches.standard ? parseInt(calorieMatches.standard) : null;  
+      const aggressiveCals = calorieMatches.aggressive ? parseInt(calorieMatches.aggressive) : null;
       
       console.log('🎯 [PerplexityService] Extracted AI calorie recommendations:', {
         conservative: conservativeCals,
@@ -1231,17 +1767,47 @@ Keep recommendations evidence-based and practical.`;
       
       if (conservativeCals && conservativeCals > 1500 && conservativeCals < 4000) {
         const weeklyDeficit = (tdee - conservativeCals) * 7; // Calculate actual deficit correctly
-        recommendations.conservative = this.generateRecommendationFromAI(conservativeCals, weight, weeklyDeficit, 'conservative', timelineMatches.conservative, request.currentGoal.targetDate);
+        const proteinGrams = macroMatches.protein.conservative ? parseInt(macroMatches.protein.conservative) : null;
+        const carbGrams = macroMatches.carbs.conservative ? parseInt(macroMatches.carbs.conservative) : null;
+        const fatGrams = macroMatches.fats.conservative ? parseInt(macroMatches.fats.conservative) : null;
+        const aiWeeklyWeightChange = this.extractWeeklyWeightChangeRate(cleanContent, 'conservative', request.currentGoal.mode);
+        
+        recommendations.conservative = this.generateRecommendationWithAIMacros(
+          conservativeCals, weight, weeklyDeficit, 'conservative', 
+          proteinGrams, carbGrams, fatGrams,
+          timelineMatches.conservative, request.currentGoal.targetDate,
+          aiWeeklyWeightChange
+        );
       }
       
       if (standardCals && standardCals > 1500 && standardCals < 4000) {
         const weeklyDeficit = (tdee - standardCals) * 7; // Calculate actual deficit correctly
-        recommendations.standard = this.generateRecommendationFromAI(standardCals, weight, weeklyDeficit, 'standard', timelineMatches.standard, request.currentGoal.targetDate);
+        const proteinGrams = macroMatches.protein.standard ? parseInt(macroMatches.protein.standard) : null;
+        const carbGrams = macroMatches.carbs.standard ? parseInt(macroMatches.carbs.standard) : null;
+        const fatGrams = macroMatches.fats.standard ? parseInt(macroMatches.fats.standard) : null;
+        const aiWeeklyWeightChange = this.extractWeeklyWeightChangeRate(cleanContent, 'standard', request.currentGoal.mode);
+        
+        recommendations.standard = this.generateRecommendationWithAIMacros(
+          standardCals, weight, weeklyDeficit, 'standard',
+          proteinGrams, carbGrams, fatGrams, 
+          timelineMatches.standard, request.currentGoal.targetDate,
+          aiWeeklyWeightChange
+        );
       }
       
       if (aggressiveCals && aggressiveCals > 1500 && aggressiveCals < 4000) {
         const weeklyDeficit = (tdee - aggressiveCals) * 7; // Calculate actual deficit correctly
-        recommendations.aggressive = this.generateRecommendationFromAI(aggressiveCals, weight, weeklyDeficit, 'aggressive', timelineMatches.aggressive, request.currentGoal.targetDate);
+        const proteinGrams = macroMatches.protein.aggressive ? parseInt(macroMatches.protein.aggressive) : null;
+        const carbGrams = macroMatches.carbs.aggressive ? parseInt(macroMatches.carbs.aggressive) : null;
+        const fatGrams = macroMatches.fats.aggressive ? parseInt(macroMatches.fats.aggressive) : null;
+        const aiWeeklyWeightChange = this.extractWeeklyWeightChangeRate(cleanContent, 'aggressive', request.currentGoal.mode);
+        
+        recommendations.aggressive = this.generateRecommendationWithAIMacros(
+          aggressiveCals, weight, weeklyDeficit, 'aggressive',
+          proteinGrams, carbGrams, fatGrams,
+          timelineMatches.aggressive, request.currentGoal.targetDate,
+          aiWeeklyWeightChange
+        );
       }
       
       // If we got at least one valid recommendation, return it
@@ -1270,9 +1836,9 @@ Keep recommendations evidence-based and practical.`;
   private extractSection(content: string, section: string): string | null {
     // Simple extraction - in production, use more sophisticated parsing
     const patterns: Record<string, RegExp> = {
-      'rationale': /rationale[:\s]*(.*?)(?=\n\n|\n[A-Z]|$)/is,
-      'sport-specific': /sport[- ]specific[:\s]*(.*?)(?=\n\n|\n[A-Z]|$)/is,
-      'periodization': /periodization[:\s]*(.*?)(?=\n\n|\n[A-Z]|$)/is
+      'rationale': /rationale[:\s]*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i,
+      'sport-specific': /sport[- ]specific[:\s]*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i,
+      'periodization': /periodization[:\s]*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i
     };
     
     const match = content.match(patterns[section]);
