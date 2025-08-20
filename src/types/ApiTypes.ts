@@ -64,6 +64,7 @@ export interface PerplexityRequest {
   return_citations?: boolean;
   search_domain_filter?: string[];
   search_recency_filter?: 'month' | 'year' | 'week';
+  search_mode?: 'academic' | 'general'; // New field for search mode
 }
 
 export interface PerplexityMessage {

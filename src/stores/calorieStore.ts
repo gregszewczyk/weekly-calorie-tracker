@@ -587,6 +587,19 @@ export const useCalorieStore = create<CalorieStore>()(
         
         set({ currentWeekGoal: adjustedGoal, error: null });
         
+        // Clear any locked daily targets and update base targets since we have a new goal
+        // This prevents old locked targets from interfering with new AI recommendations
+        set(state => ({
+          weeklyData: state.weeklyData.map(dayData => ({
+            ...dayData,
+            target: adjustedGoal.dailyBaseline, // Update base target to new daily baseline
+            lockedDailyTarget: undefined,
+            targetLockedAt: undefined
+          }))
+        }));
+        
+        console.log('🔓 [setWeeklyGoal] Cleared locked targets and updated base targets to:', adjustedGoal.dailyBaseline);
+        
         // Auto-backup after setting weekly goal (critical operation)
         setTimeout(() => {
           get().createBackup().catch(error => {
@@ -1764,19 +1777,19 @@ export const useCalorieStore = create<CalorieStore>()(
           return existingTarget;
         }
         
-        // Calculate current redistribution target WITHOUT calling getCalorieBankStatus()
-        const redistribution = get().getCalorieRedistribution();
-        const redistributionTarget = redistribution?.recommendedDailyTargets[0] || 
-                                     get().currentWeekGoal?.dailyBaseline || 
-                                     get().getReasonableCalorieFallback();
+        // Get the current target for this day (don't recalculate, just lock what's already set)
+        const dayData = get().weeklyData.find(data => data.date === targetDate);
+        const currentTarget = dayData?.target || 
+                              get().currentWeekGoal?.dailyBaseline || 
+                              get().getReasonableCalorieFallback();
         
-        // Lock this target for the day
+        // Lock the EXISTING target for the day (don't change it)
         set(state => ({
           weeklyData: state.weeklyData.map(dayData => {
             if (dayData.date === targetDate) {
               return {
                 ...dayData,
-                lockedDailyTarget: redistributionTarget,
+                lockedDailyTarget: currentTarget,
                 targetLockedAt: new Date().toISOString()
               };
             }
@@ -1784,8 +1797,8 @@ export const useCalorieStore = create<CalorieStore>()(
           })
         }));
         
-        console.log(`🔒 [lockDailyTarget] Locked target for ${targetDate}: ${redistributionTarget} calories`);
-        return redistributionTarget;
+        console.log(`🔒 [lockDailyTarget] Locked EXISTING target for ${targetDate}: ${currentTarget} calories (was: ${dayData?.target})`);
+        return currentTarget;
       },
 
       getLockedDailyTarget: (date?: string): number | null => {

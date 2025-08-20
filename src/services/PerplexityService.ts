@@ -1144,10 +1144,12 @@ ADDITIONAL CONTEXT:
           content: prompt
         }
       ],
+
       max_tokens: requestConfig.max_tokens,
       temperature: requestConfig.temperature,
       top_p: requestConfig.top_p,
-      search_domain_filter: [...requestConfig.search_domain_filter],
+      search_mode: requestConfig.search_mode,
+      //search_domain_filter: [...requestConfig.search_domain_filter],
       return_citations: requestConfig.return_citations,
       search_recency_filter: requestConfig.search_recency_filter,
       top_k: requestConfig.top_k,

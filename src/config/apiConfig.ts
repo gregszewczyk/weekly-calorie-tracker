@@ -86,14 +86,16 @@ export const PERPLEXITY_CONFIG = {
     presence_penalty: 0,
     frequency_penalty: 1,
     return_citations: true,
-    search_recency_filter: 'year' as const, // Focus on recent research
-    search_domain_filter: [
-      'pubmed.ncbi.nlm.nih.gov',
-      'scholar.google.com',
-      'mysportscience.com',
-      'journals.humankinetics.com',
-      'link.springer.com'
-    ]
+    search_recency_filter: 'year' as const,
+    search_mode: 'academic' as const, // Focus on academic content
+    // , // Focus on recent research
+    // search_domain_filter: [
+    //   'pubmed.ncbi.nlm.nih.gov',
+    //   'scholar.google.com',
+    //   'mysportscience.com',
+    //   'journals.humankinetics.com',
+    //   'link.springer.com'
+    // ]
   },
   
   // Rate Limiting
