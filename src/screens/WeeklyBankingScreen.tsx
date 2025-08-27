@@ -44,11 +44,21 @@ const WeeklyBankingScreen: React.FC = () => {
     getBankingPlan,
     isBankingAvailable,
     forceWeeklyReset,
-    weeklyData // Subscribe to weeklyData changes to trigger re-render
+    weeklyData, // Subscribe to weeklyData changes to trigger re-render
+    isFullyReady // NEW: Wait for complete rehydration
   } = useCalorieStore();
   const { theme } = useTheme();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [bankStatus, setBankStatus] = useState<CalorieBankStatus | null>(null);
+  // Initialize bankStatus with actual data if ready, null otherwise
+  const [bankStatus, setBankStatus] = useState<CalorieBankStatus | null>(() => {
+    if (isFullyReady) {
+      const status = getCalorieBankStatus();
+      console.log('🎯 [WeeklyBanking] Initial bankStatus set to:', !!status);
+      return status;
+    }
+    console.log('🎯 [WeeklyBanking] Initial bankStatus set to null - not ready');
+    return null;
+  });
   const [recentActivities, setRecentActivities] = useState<UniversalActivity[]>([]);
   const [showUsedBreakdown, setShowUsedBreakdown] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
@@ -61,20 +71,8 @@ const WeeklyBankingScreen: React.FC = () => {
     });
   }, [navigation]);
 
-  useEffect(() => {
-    updateBankStatus();
-  }, []);
-
-
   // Remove automatic updates on weeklyData changes to prevent infinite loops
   // updateBankStatus will be called manually when needed
-
-  // Refresh data when screen comes into focus (e.g., navigating back from another screen)
-  useFocusEffect(
-    React.useCallback(() => {
-      updateBankStatus();
-    }, [])
-  );
 
   // Listen for health device connection changes and auto-refresh
   useEffect(() => {
@@ -126,9 +124,19 @@ const WeeklyBankingScreen: React.FC = () => {
   );
 
   const updateBankStatus = React.useCallback(() => {
+    // Wait for complete rehydration before calling getCalorieBankStatus
+    console.log('🔍 [WeeklyBanking] updateBankStatus called, isFullyReady:', isFullyReady);
+    
+    if (!isFullyReady) {
+      console.log('🔍 [WeeklyBanking] Skipping bank status update - waiting for full rehydration');
+      setBankStatus(null);
+      return;
+    }
+
+    console.log('✅ [WeeklyBanking] Rehydration complete, updating bank status');
     const status = getCalorieBankStatus();
     setBankStatus(status);
-  }, [getCalorieBankStatus]);
+  }, [getCalorieBankStatus, isFullyReady]);
 
   const onRefresh = async () => {
     setIsRefreshing(true);
@@ -151,6 +159,26 @@ const WeeklyBankingScreen: React.FC = () => {
     
     setTimeout(() => setIsRefreshing(false), 500);
   };
+
+  // Initialize bank status on component mount
+  useEffect(() => {
+    updateBankStatus();
+  }, [updateBankStatus]);
+
+  // Update bank status when rehydration completes
+  useEffect(() => {
+    if (isFullyReady) {
+      console.log('🚀 [WeeklyBanking] Rehydration completed, updating bank status');
+      updateBankStatus();
+    }
+  }, [isFullyReady, updateBankStatus]);
+
+  // Refresh data when screen comes into focus (e.g., navigating back from another screen)
+  useFocusEffect(
+    React.useCallback(() => {
+      updateBankStatus();
+    }, [updateBankStatus])
+  );
 
   const handleGoalSettings = () => {
     Alert.alert(

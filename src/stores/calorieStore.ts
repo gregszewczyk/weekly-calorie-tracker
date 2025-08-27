@@ -42,6 +42,7 @@ interface CalorieStore {
   goalConfiguration: GoalConfiguration | null; // NEW
   weightEntries: WeightEntry[]; // NEW
   _hasHydrated: boolean; // Track hydration status
+  isFullyReady: boolean; // NEW: Track when rehydration callback completes
   recoveryState: RecoveryState; // NEW: Recovery state management
 
   // Computed values
@@ -143,6 +144,7 @@ interface CalorieStore {
   
   // Hydration control methods
   setHasHydrated: (hydrated: boolean) => void;
+  setIsFullyReady: (ready: boolean) => void;
 }
 
 export const useCalorieStore = create<CalorieStore>()(
@@ -156,6 +158,7 @@ export const useCalorieStore = create<CalorieStore>()(
       goalConfiguration: null, // NEW
       weightEntries: [], // NEW
       _hasHydrated: false, // Initially not hydrated
+      isFullyReady: false, // Initially not fully ready
       recoveryState: { // NEW: Recovery state initialization
         activeRecoverySession: undefined,
         recentOvereatingEvents: [],
@@ -1835,6 +1838,12 @@ export const useCalorieStore = create<CalorieStore>()(
         set({ _hasHydrated: hydrated });
         console.log('💧 [CalorieStore] _hasHydrated updated to:', hydrated);
       },
+      
+      setIsFullyReady: (ready: boolean): void => {
+        console.log('🚀 [CalorieStore] setIsFullyReady called with:', ready);
+        set({ isFullyReady: ready });
+        console.log('🚀 [CalorieStore] isFullyReady updated to:', ready);
+      },
 
       // Calorie Banking methods
       createBankingPlan: async (targetDate: string, dailyReduction: number): Promise<boolean> => {
@@ -2347,15 +2356,16 @@ export const useCalorieStore = create<CalorieStore>()(
             console.log('💧 [CalorieStore] GoalConfig after rehydration:', !!state.goalConfiguration);
             console.log('💧 [CalorieStore] GoalConfig mode:', state.goalConfiguration?.mode);
             
-            // Trigger hydration completion using store action
+            // Set custom rehydration complete flag - this is our reliable indicator
             // We need to use a setTimeout to ensure this runs after rehydration is complete
             setTimeout(() => {
               try {
                 const store = useCalorieStore.getState();
-                store.setHasHydrated(true);
-                console.log('💧 [CalorieStore] Hydration flag set via store action');
+                store.setHasHydrated(true); // Keep for backwards compatibility
+                store.setIsFullyReady(true); // NEW: Our reliable flag
+                console.log('🚀 [CalorieStore] Rehydration fully complete - app ready to render');
               } catch (error) {
-                console.error('❌ [CalorieStore] Error setting hydration flag:', error);
+                console.error('❌ [CalorieStore] Error setting rehydration flags:', error);
               }
             }, 0);
           }

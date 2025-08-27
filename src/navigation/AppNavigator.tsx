@@ -283,7 +283,18 @@ const AthleteOnboardingWrapper: React.FC = () => {
 };
 
 const AppNavigator: React.FC = () => {
-  const { goalConfiguration, debugStore, _hasHydrated, currentWeekGoal, setWeeklyGoal, resetGoal } = useCalorieStore();
+  // Only subscribe to essential props to prevent excessive re-renders
+  const { goalConfiguration, debugStore, _hasHydrated, isFullyReady, currentWeekGoal, setWeeklyGoal, resetGoal } = useCalorieStore(
+    (state) => ({
+      goalConfiguration: state.goalConfiguration,
+      debugStore: state.debugStore,
+      _hasHydrated: state._hasHydrated,
+      isFullyReady: state.isFullyReady,
+      currentWeekGoal: state.currentWeekGoal,
+      setWeeklyGoal: state.setWeeklyGoal,
+      resetGoal: state.resetGoal,
+    })
+  );
   const { theme, isDark } = useTheme();
   
   // // Force hydration after timeout to prevent infinite loading
@@ -415,22 +426,46 @@ const AppNavigator: React.FC = () => {
     return 'WeeklyBanking';
   };
 
-  // Show loading screen while store rehydrates - DO NOT RENDER NAVIGATOR YET
-  if (!_hasHydrated) {
-    console.log('⏳ [AppNavigator] Waiting for hydration before rendering navigator');
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
-        <Text style={{ fontSize: 24, fontWeight: 'bold', color: theme.colors.text, marginBottom: 10 }}>🔄</Text>
-        <Text style={{ fontSize: 16, color: theme.colors.textSecondary }}>Loading your nutrition plan...</Text>
-        <Text style={{ fontSize: 12, color: theme.colors.textTertiary, marginTop: 10 }}>
-          Waiting for store hydration...
-        </Text>
-        <Text style={{ fontSize: 10, color: theme.colors.textTertiary, marginTop: 20 }}>
-          If this takes more than 5 seconds, we'll fix any storage issues automatically
-        </Text>
-      </View>
-    );
-  }
+  // Helper function to check if app is fully ready
+  const isAppReady = (): boolean => {
+    // Use our custom flag that only gets set when rehydration callback actually completes
+    if (!isFullyReady) {
+      console.log('🔍 [AppNavigator] Waiting for rehydration to fully complete...', {
+        isFullyReady,
+        _hasHydrated, // For comparison
+      });
+      return false;
+    }
+    
+    // Get fresh state - we know rehydration callback has completed
+    const store = useCalorieStore.getState();
+    const { currentWeekGoal, goalConfiguration } = store;
+    
+    // Handle corrupted data case
+    const isGoalConfigCorrupted = typeof goalConfiguration === 'boolean' && (goalConfiguration as any) === false;
+    if (isGoalConfigCorrupted) {
+      console.log('🔍 [AppNavigator] Corrupted goalConfiguration detected, allowing through to recovery screen');
+      return true;
+    }
+    
+    // Check for valid data
+    const isGoalConfigValid = goalConfiguration !== null && goalConfiguration !== undefined && typeof goalConfiguration === 'object';
+    const hasEssentialData = !!(currentWeekGoal && isGoalConfigValid);
+    
+    console.log('🔍 [AppNavigator] App readiness check (rehydration fully complete):', {
+      isFullyReady,
+      _hasHydrated,
+      hasCurrentWeekGoal: !!currentWeekGoal,
+      hasGoalConfiguration: !!goalConfiguration,
+      goalConfigType: typeof goalConfiguration,
+      isReady: hasEssentialData
+    });
+    
+    return hasEssentialData;
+  };
+
+  // App.tsx now handles the loading screen, so AppNavigator only renders when ready
+  console.log('✅ [AppNavigator] Rendering - app is fully ready');
 
   // TEMPORARY FIX: Handle corrupted goalConfiguration
   if ((goalConfiguration as any) === false) {
