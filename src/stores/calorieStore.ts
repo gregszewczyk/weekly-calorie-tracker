@@ -296,10 +296,8 @@ export const useCalorieStore = create<CalorieStore>()(
         const today = format(new Date(), 'yyyy-MM-dd');
         const todayData = get().weeklyData.find(data => data.date === today) || null;
         
-        // Re-enable auto-locking (should be safe now with fixed lockDailyTarget)
-        if (todayData && get().getLockedDailyTarget(today) === null) {
-          get().lockDailyTarget(today);
-        }
+        // REMOVED: Auto-locking moved to prevent setState-in-render errors
+        // Auto-locking should happen in useEffect or user actions, not in computed getters
         
         return todayData;
       },
@@ -317,16 +315,32 @@ export const useCalorieStore = create<CalorieStore>()(
         const startDate = new Date(state.goalConfiguration.startDate);
         const today = new Date();
         
-        // Find the Monday of the week when the goal started
-        const goalStartMonday = startOfWeek(startDate, { weekStartsOn: 1 });
+        // Find the Monday AFTER the goal started (start of Week 2)
+        const goalStartDate = startOfWeek(startDate, { weekStartsOn: 1 });
+        const firstFullWeekMonday = new Date(goalStartDate.getTime() + 7 * 24 * 60 * 60 * 1000); // Next Monday
         
         // Find the Monday of the current week  
         const currentMonday = startOfWeek(today, { weekStartsOn: 1 });
         
-        // Calculate the number of weeks (Mondays) between them
-        const weeksDiff = Math.floor((currentMonday.getTime() - goalStartMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+        // Debug logging for week calculation
+        console.log('📅 [WeekNumber] Week calculation debug:');
+        console.log(`   Goal start date: ${startDate.toDateString()}`);
+        console.log(`   Goal start Monday: ${goalStartDate.toDateString()}`);
+        console.log(`   First full week Monday: ${firstFullWeekMonday.toDateString()}`);
+        console.log(`   Current Monday: ${currentMonday.toDateString()}`);
         
-        return weeksDiff + 1; // Week 1 for first week, Week 2 for second Monday, etc.
+        // If we're still in the partial first week
+        if (currentMonday.getTime() < firstFullWeekMonday.getTime()) {
+          console.log(`   Result: Week 1 (partial week)`);
+          return 1; // Week 1 (partial week)
+        }
+        
+        // Calculate the number of full weeks since the first full week started
+        const weeksDiff = Math.floor((currentMonday.getTime() - firstFullWeekMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+        const weekNumber = weeksDiff + 2;
+        
+        console.log(`   Weeks diff: ${weeksDiff}, Result: Week ${weekNumber}`);
+        return weekNumber; // Week 2 for first full week, Week 3 for second full week, etc.
       },
 
       getCalorieBankStatus: () => {
@@ -975,31 +989,20 @@ export const useCalorieStore = create<CalorieStore>()(
           });
         }
         
-        // Handle migration and Monday reset logic
+        // Handle migration and weekly reset logic
         const currentWeekGoal = get().currentWeekGoal;
         if (currentWeekGoal) {
           const today = new Date();
-          const isMonday = today.getDay() === 1; // Monday = 1
           const todayString = format(today, 'yyyy-MM-dd');
-          const isWeekStart = todayString === weekStart;
           
-          // DEBUG: Monday reset troubleshooting
-          console.log('🔍 [CalorieStore] Monday reset debug:');
+          // DEBUG: Weekly reset troubleshooting
+          console.log('🔍 [CalorieStore] Weekly reset debug:');
           console.log(`   Today: ${todayString} (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][today.getDay()]})`);
           console.log(`   Week start (calculated): ${weekStart}`);
           console.log(`   Week start (stored goal): ${currentWeekGoal.weekStartDate}`);
-          console.log(`   Is Monday: ${isMonday}`);
-          console.log(`   Is week start: ${isWeekStart}`);
+          console.log(`   New week detected: ${currentWeekGoal.weekStartDate !== weekStart}`);
           console.log(`   Current allowance: ${currentWeekGoal.currentWeekAllowance}`);
           console.log(`   Weekly allowance: ${currentWeekGoal.weeklyAllowance}`);
-          console.log(`   Allowances different: ${currentWeekGoal.currentWeekAllowance !== currentWeekGoal.weeklyAllowance}`);
-          
-          // Check if we have old data that needs cleanup regardless of allowance status
-          const currentWeekDates = weekDates;
-          const oldData = get().weeklyData.filter(day => !currentWeekDates.includes(day.date));
-          if (isMonday && oldData.length > 0) {
-            console.log('🗑️ [CalorieStore] Found old weekly data that needs cleanup on Monday:', oldData.map(d => `${d.date}(${d.consumed}cal)`));
-          }
           
           // Migration: If currentWeekAllowance is missing, set it based on current logic
           if (currentWeekGoal.currentWeekAllowance === undefined) {
@@ -1025,9 +1028,9 @@ export const useCalorieStore = create<CalorieStore>()(
             set({ currentWeekGoal: updatedGoal });
             console.log(`   Set currentWeekAllowance to ${proportionalAllowance} for ${daysRemaining} remaining days`);
           }
-          // Monday reset: Check if we've moved to a new week (week start date has changed)
-          else if (isMonday && currentWeekGoal.weekStartDate !== weekStart) {
-            console.log('📅 [CalorieStore] Monday reset: updating currentWeekAllowance to full weekly allowance');
+          // New week reset: Check if we've moved to a new week (week start date has changed)
+          else if (currentWeekGoal.weekStartDate !== weekStart) {
+            console.log('📅 [CalorieStore] New week detected: resetting weekly data and applying carryover');
             console.log(`   Previous: ${currentWeekGoal.currentWeekAllowance} → New: ${currentWeekGoal.weeklyAllowance}`);
             
             // Clear old weekly data from previous week
@@ -1050,51 +1053,21 @@ export const useCalorieStore = create<CalorieStore>()(
             
             console.log(`📊 [CalorieStore] New week allowance: ${currentWeekGoal.weeklyAllowance} + ${carryoverBalance} = ${updatedGoal.currentWeekAllowance}`);
             
-            // Update goal and clear old data
+            // Create completely fresh weekly data with 0 consumed/burned
+            const freshWeeklyData: DailyCalorieData[] = currentWeekDates.map(date => ({
+              date,
+              consumed: 0,        // Fresh start
+              burned: 0,          // Fresh start
+              target: updatedGoal.dailyBaseline,
+              meals: []           // Fresh start
+            }));
+            
+            console.log(`🔄 [CalorieStore] Creating fresh weekly data for ${freshWeeklyData.length} days`);
+            
+            // Update goal and set fresh data
             set(state => ({
               currentWeekGoal: updatedGoal,
-              weeklyData: state.weeklyData.filter(day => currentWeekDates.includes(day.date))
-            }));
-          }
-          // Alternative: Check if we need to reset for new week even if stored weekStartDate is old
-          else if (isMonday && currentWeekGoal.weekStartDate !== weekStart) {
-            console.log('📅 [CalorieStore] New week detected: updating for new week start');
-            console.log(`   Old week start: ${currentWeekGoal.weekStartDate} → New: ${weekStart}`);
-            console.log(`   Previous allowance: ${currentWeekGoal.currentWeekAllowance} → New: ${currentWeekGoal.weeklyAllowance}`);
-            
-            // Clear old weekly data from previous week
-            const currentWeekDates = weekDates; // These are the current week's dates
-            const oldDataToRemove = get().weeklyData.filter(day => !currentWeekDates.includes(day.date));
-            console.log('🗑️ [CalorieStore] Clearing old weekly data:', oldDataToRemove.map(d => `${d.date}(${d.consumed}cal)`));
-            
-            // Calculate previous week balance for carryover
-            let carryoverBalance = 0;
-            if (oldDataToRemove.length > 0) {
-              carryoverBalance = get().calculatePreviousWeekBalance(oldDataToRemove, currentWeekGoal);
-              console.log(`💰 [CalorieStore] Previous week balance: ${carryoverBalance} (will be applied to new week)`);
-            }
-            
-            const updatedGoal = {
-              ...currentWeekGoal,
-              currentWeekAllowance: currentWeekGoal.weeklyAllowance + carryoverBalance, // Apply carryover to new week allowance
-              weekStartDate: weekStart // Update to current week start date
-            };
-            
-            console.log(`📊 [CalorieStore] New week allowance: ${currentWeekGoal.weeklyAllowance} + ${carryoverBalance} = ${updatedGoal.currentWeekAllowance}`);
-            
-            // Update goal and clear old data
-            set(state => ({
-              currentWeekGoal: updatedGoal,
-              weeklyData: state.weeklyData.filter(day => currentWeekDates.includes(day.date))
-            }));
-          }
-          // Additional cleanup: Remove old data on Monday even if allowances are already correct
-          else if (isMonday && oldData.length > 0) {
-            console.log('🗑️ [CalorieStore] Monday cleanup: removing old weekly data even though allowances are correct');
-            console.log(`   Removing ${oldData.length} old entries:`, oldData.map(d => `${d.date}(${d.consumed}cal)`));
-            
-            set(state => ({
-              weeklyData: state.weeklyData.filter(day => currentWeekDates.includes(day.date))
+              weeklyData: freshWeeklyData
             }));
           }
         }
@@ -1137,10 +1110,21 @@ export const useCalorieStore = create<CalorieStore>()(
 
         console.log(`📊 [CalorieStore] Force reset: New week allowance: ${currentWeekGoal.weeklyAllowance} + ${carryoverBalance} = ${updatedGoal.currentWeekAllowance}`);
 
-        // Update goal and clear old data
+        // Create completely fresh weekly data with 0 consumed/burned
+        const freshWeeklyData: DailyCalorieData[] = currentWeekDates.map(date => ({
+          date,
+          consumed: 0,        // Fresh start
+          burned: 0,          // Fresh start
+          target: updatedGoal.dailyBaseline,
+          meals: []           // Fresh start
+        }));
+        
+        console.log(`🔄 [CalorieStore] Creating fresh weekly data for force reset: ${freshWeeklyData.length} days`);
+
+        // Update goal and set fresh data
         set(state => ({
           currentWeekGoal: updatedGoal,
-          weeklyData: state.weeklyData.filter(day => currentWeekDates.includes(day.date))
+          weeklyData: freshWeeklyData
         }));
 
         console.log('✅ [CalorieStore] Force weekly reset completed');
@@ -1243,7 +1227,11 @@ export const useCalorieStore = create<CalorieStore>()(
 
         // Use locked daily target (set once per day) instead of dynamic banking target
         const lockedTarget = get().getLockedDailyTarget(today);
-        const correctDailyTarget = lockedTarget !== null ? lockedTarget : get().lockDailyTarget(today);
+        const correctDailyTarget = lockedTarget !== null ? lockedTarget : 
+                                   (get().currentWeekGoal?.dailyBaseline || get().getReasonableCalorieFallback());
+        
+        // Note: Auto-locking removed to prevent setState-in-render errors
+        // Locking should happen in useEffect or user actions
         
         console.log(`🎯 [getDailyProgress] Using locked daily target: ${correctDailyTarget} (locked: ${lockedTarget !== null ? 'YES' : 'JUST_LOCKED'}, static: ${todayData.target})`);
 
@@ -1986,7 +1974,10 @@ export const useCalorieStore = create<CalorieStore>()(
         
         // Use locked daily target for consistent overeating detection
         const lockedTarget = get().getLockedDailyTarget(checkDate);
-        const correctDailyTarget = lockedTarget !== null ? lockedTarget : get().lockDailyTarget(checkDate);
+        const correctDailyTarget = lockedTarget !== null ? lockedTarget : 
+                                   (todayData.target || currentWeekGoal.dailyBaseline || get().getReasonableCalorieFallback());
+        
+        // Note: Auto-locking removed to prevent setState-in-render errors
 
         console.log(`🚨 [checkForOvereatingEvent] Using locked target for detection: ${correctDailyTarget} (locked: ${lockedTarget !== null ? 'YES' : 'JUST_LOCKED'}, static: ${todayData.target})`);
 
@@ -2208,7 +2199,10 @@ export const useCalorieStore = create<CalorieStore>()(
         
         // Use correct daily target from banking system instead of static todayData.target
         const lockedTarget = get().getLockedDailyTarget(date);
-        const correctDailyTarget = lockedTarget !== null ? lockedTarget : get().lockDailyTarget(date);
+        const correctDailyTarget = lockedTarget !== null ? lockedTarget : 
+                                   (todayData.target || currentWeekGoal.dailyBaseline || get().getReasonableCalorieFallback());
+        
+        // Note: Auto-locking removed to prevent setState-in-render errors
 
         const excess = todayData.consumed - correctDailyTarget;
         const isStillOvereating = excess > 200; // OVEREATING_THRESHOLDS.mild

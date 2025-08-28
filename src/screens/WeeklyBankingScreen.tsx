@@ -41,6 +41,8 @@ const WeeklyBankingScreen: React.FC = () => {
     resetGoal,
     resetCompletely,
     getTodaysData,
+    getLockedDailyTarget,
+    lockDailyTarget,
     getBankingPlan,
     isBankingAvailable,
     forceWeeklyReset,
@@ -134,9 +136,17 @@ const WeeklyBankingScreen: React.FC = () => {
     }
 
     console.log('✅ [WeeklyBanking] Rehydration complete, updating bank status');
+    
+    // Handle daily target locking (moved from getTodaysData to prevent setState-in-render)
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const todayData = getTodaysData();
+    if (todayData && getLockedDailyTarget(today) === null) {
+      lockDailyTarget(today);
+    }
+    
     const status = getCalorieBankStatus();
     setBankStatus(status);
-  }, [getCalorieBankStatus, isFullyReady]);
+  }, [getCalorieBankStatus, isFullyReady, getTodaysData, getLockedDailyTarget, lockDailyTarget]);
 
   const onRefresh = async () => {
     setIsRefreshing(true);
