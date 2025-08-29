@@ -741,10 +741,15 @@ export const useCalorieStore = create<CalorieStore>()(
           return { weeklyData, error: null };
         });
 
+        // Check for potential overeating event after calorie update
+        setTimeout(() => {
+          get().checkForOvereatingEvent(today);
+        }, 100);
+
         // Clean up stale recovery events after calorie update
         setTimeout(() => {
           get().cleanupStaleRecoveryEvents(today);
-        }, 100);
+        }, 150);
 
         // Background sync of today's Garmin active calories
         setTimeout(() => {
