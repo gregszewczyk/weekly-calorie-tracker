@@ -97,6 +97,9 @@ interface CalorieStore {
   // NEW: Weekly balance carryover
   calculatePreviousWeekBalance: (previousWeekData: DailyCalorieData[], previousWeekGoal: WeeklyCalorieGoal) => number;
   
+  // Daily target calculation methods
+  calculateDailyTarget: (date?: string) => number; // Unified daily target calculation
+  
   // Historical data methods
   getAverageCalorieBurn: (days?: number) => number;
   getAverageCalorieIntake: (days?: number) => number;
@@ -114,6 +117,7 @@ interface CalorieStore {
   getBankingPlan: () => CalorieBankingPlan | null;
   validateBankingPlan: (targetDate: string, dailyReduction: number) => BankingPlanValidation | null;
   isBankingAvailable: () => boolean;
+  updateBankingPlanStatus: () => void; // Check and update plan status based on current date
   
   // Recovery management methods
   checkForOvereatingEvent: (date?: string) => OvereatingEvent | null;
@@ -366,9 +370,7 @@ export const useCalorieStore = create<CalorieStore>()(
         
         // Calculate daily average for remaining days (excluding today's locked target)
         const lockedTarget = get().getLockedDailyTarget();
-        const todayTarget = lockedTarget || 
-                           currentWeekGoal?.dailyBaseline || 
-                           get().getReasonableCalorieFallback();
+        const todayTarget = lockedTarget || get().calculateDailyTarget();
         
         // For future days calculation, subtract today's target from total remaining
         const remainingForFutureDays = totalRemaining - todayTarget;
@@ -1768,13 +1770,10 @@ export const useCalorieStore = create<CalorieStore>()(
           return existingTarget;
         }
         
-        // Get the current target for this day (don't recalculate, just lock what's already set)
-        const dayData = get().weeklyData.find(data => data.date === targetDate);
-        const currentTarget = dayData?.target || 
-                              get().currentWeekGoal?.dailyBaseline || 
-                              get().getReasonableCalorieFallback();
+        // Use the unified daily target calculation (includes banking + redistribution)
+        const currentTarget = get().calculateDailyTarget(targetDate);
         
-        // Lock the EXISTING target for the day (don't change it)
+        // Lock the calculated target for the day
         set(state => ({
           weeklyData: state.weeklyData.map(dayData => {
             if (dayData.date === targetDate) {
@@ -1788,7 +1787,7 @@ export const useCalorieStore = create<CalorieStore>()(
           })
         }));
         
-        console.log(`🔒 [lockDailyTarget] Locked EXISTING target for ${targetDate}: ${currentTarget} calories (was: ${dayData?.target})`);
+        console.log(`🔒 [lockDailyTarget] Locked calculated target for ${targetDate}: ${currentTarget} calories`);
         return currentTarget;
       },
 
@@ -1956,6 +1955,86 @@ export const useCalorieStore = create<CalorieStore>()(
         }
 
         return CalorieBankingService.isBankingAvailable(currentWeekGoal.weekStartDate);
+      },
+
+      updateBankingPlanStatus: () => {
+        const { currentWeekGoal } = get();
+        if (!currentWeekGoal?.bankingPlan || !currentWeekGoal.bankingPlan.isActive) {
+          return; // No active plan to update
+        }
+
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const targetDate = currentWeekGoal.bankingPlan.targetDate;
+        
+        // If today is AFTER the target date, deactivate the plan
+        const todayObj = new Date(today);
+        const targetObj = new Date(targetDate);
+        
+        if (todayObj > targetObj) {
+          console.log(`🏁 [updateBankingPlanStatus] Banking plan completed. Target date ${targetDate} has passed.`);
+          
+          // Deactivate the banking plan
+          const updatedGoal = {
+            ...currentWeekGoal,
+            bankingPlan: {
+              ...currentWeekGoal.bankingPlan,
+              isActive: false
+            }
+          };
+          
+          set({ currentWeekGoal: updatedGoal });
+          console.log('✅ [updateBankingPlanStatus] Banking plan marked as inactive');
+        }
+      },
+
+      // UNIFIED DAILY TARGET CALCULATION
+      calculateDailyTarget: (date?: string): number => {
+        const targetDate = date || format(new Date(), 'yyyy-MM-dd');
+        const { currentWeekGoal, weeklyData, goalConfiguration } = get();
+        
+        if (!currentWeekGoal || !goalConfiguration) {
+          return 2000; // Reasonable fallback
+        }
+        
+        // Check if this is Day 1 of the goal (use AI baseline)
+        const goalStartDate = goalConfiguration.startDate;
+        const isFirstDay = targetDate === goalStartDate;
+        
+        if (isFirstDay) {
+          console.log(`🎯 [calculateDailyTarget] Day 1 (${targetDate}): Using AI baseline ${currentWeekGoal.dailyBaseline}`);
+          return currentWeekGoal.dailyBaseline;
+        }
+        
+        // Day 2+: Dynamic calculation based on remaining bank
+        const totalConsumed = weeklyData.reduce((sum, day) => sum + day.consumed, 0);
+        const totalBurned = weeklyData.reduce((sum, day) => sum + day.burned, 0);
+        const remainingCalories = currentWeekGoal.currentWeekAllowance - totalConsumed + totalBurned;
+        
+        // Calculate remaining days from target date
+        const today = new Date();
+        const targetDateObj = new Date(targetDate);
+        const currentWeekStart = startOfWeek(today, { weekStartsOn: 1 });
+        const weekEnd = addDays(currentWeekStart, 6);
+        
+        // Days from target date to end of week (including target date)
+        const daysFromTargetToWeekEnd = Math.max(1, Math.ceil((weekEnd.getTime() - targetDateObj.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+        
+        const dynamicTarget = Math.round(remainingCalories / daysFromTargetToWeekEnd);
+        
+        // Apply banking plan adjustments if active
+        const dayData = weeklyData.find(d => d.date === targetDate);
+        const bankingAdjustment = dayData?.bankingAdjustment || 0;
+        
+        const finalTarget = Math.max(dynamicTarget + bankingAdjustment, 1200); // Minimum safety
+        
+        console.log(`🎯 [calculateDailyTarget] Day ${targetDate}:`);
+        console.log(`   Remaining calories: ${remainingCalories}`);
+        console.log(`   Days remaining: ${daysFromTargetToWeekEnd}`);
+        console.log(`   Dynamic target: ${dynamicTarget}`);
+        console.log(`   Banking adjustment: ${bankingAdjustment}`);
+        console.log(`   Final target: ${finalTarget}`);
+        
+        return finalTarget;
       },
 
       // Recovery management methods

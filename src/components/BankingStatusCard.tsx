@@ -40,8 +40,56 @@ const BankingStatusCard: React.FC<BankingStatusCardProps> = ({
 
   const getDaysUntilTarget = (): number => {
     const today = new Date();
-    const targetDate = parseISO(bankingPlan.targetDate);
+    // Fix timezone issue: create date in local timezone instead of UTC
+    const [year, month, day] = bankingPlan.targetDate.split('-').map(Number);
+    const targetDate = new Date(year, month - 1, day, 12, 0, 0); // month is 0-indexed, noon local time
     return Math.max(0, differenceInDays(targetDate, today));
+  };
+
+  const getDynamicRemainingDays = (): number => {
+    const today = new Date();
+    // Fix timezone issue: create date in local timezone instead of UTC
+    const [year, month, day] = bankingPlan.targetDate.split('-').map(Number);
+    // Create date at noon to avoid timezone boundary issues
+    const targetDate = new Date(year, month - 1, day, 12, 0, 0); // 12 PM local time
+    
+    // Count banking days from tomorrow until day before target date
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(12, 0, 0, 0); // Set to noon to match targetDate timing
+    
+    const dayBeforeTarget = new Date(targetDate);
+    dayBeforeTarget.setDate(dayBeforeTarget.getDate() - 1);
+    
+    if (tomorrow > dayBeforeTarget) {
+      return 0; // No more banking days
+    }
+    
+    // Count days from tomorrow through day before target (inclusive)
+    const result = Math.max(0, differenceInDays(dayBeforeTarget, tomorrow) + 1);
+    
+    return result;
+  };
+
+  const getCaloriesSavedSoFar = (): number => {
+    const today = new Date();
+    const planCreatedDate = new Date(bankingPlan.createdAt);
+    // Fix timezone issue: create date in local timezone instead of UTC
+    const [year, month, day] = bankingPlan.targetDate.split('-').map(Number);
+    const targetDate = new Date(year, month - 1, day, 12, 0, 0); // month is 0-indexed, noon local time
+    
+    // Count days from the day after plan creation until today (inclusive)
+    // These are the days where reductions have already been applied
+    const dayAfterCreation = new Date(planCreatedDate);
+    dayAfterCreation.setDate(dayAfterCreation.getDate() + 1);
+    
+    if (today < dayAfterCreation || today >= targetDate) {
+      return today >= targetDate ? bankingPlan.totalBanked : 0; // All saved if target reached, 0 if before banking starts
+    }
+    
+    // Count completed banking days (days that have passed with reductions)
+    const completedBankingDays = differenceInDays(today, dayAfterCreation) + 1; // +1 to include today
+    return completedBankingDays * bankingPlan.dailyReduction;
   };
 
   const handleEditBanking = () => {
@@ -135,16 +183,18 @@ const BankingStatusCard: React.FC<BankingStatusCardProps> = ({
         </View>
 
         {/* Daily Reduction Info */}
-        {!isTargetToday && bankingPlan.remainingDaysCount > 0 && (
-          <View style={[styles.reductionInfo, { borderTopColor: theme.colors.border }]}>
-            <View style={styles.reductionLeft}>
-              <Text style={[styles.reductionText, { color: theme.colors.text }]}>
-                Daily reduction for remaining days
-              </Text>
-              <Text style={[styles.daysAffected, { color: theme.colors.textSecondary }]}>
-                {bankingPlan.remainingDaysCount} {bankingPlan.remainingDaysCount === 1 ? 'day' : 'days'} affected
-              </Text>
-            </View>
+        {(() => {
+          const dynamicRemainingDays = getDynamicRemainingDays();
+          return !isTargetToday && dynamicRemainingDays > 0 && (
+            <View style={[styles.reductionInfo, { borderTopColor: theme.colors.border }]}>
+              <View style={styles.reductionLeft}>
+                <Text style={[styles.reductionText, { color: theme.colors.text }]}>
+                  Daily reduction for remaining days
+                </Text>
+                <Text style={[styles.daysAffected, { color: theme.colors.textSecondary }]}>
+                  {dynamicRemainingDays} {dynamicRemainingDays === 1 ? 'day' : 'days'} affected
+                </Text>
+              </View>
             <View style={styles.reductionRight}>
               <Text style={[styles.reductionAmount, { color: theme.colors.warning }]}>
                 -{bankingPlan.dailyReduction}
@@ -154,7 +204,8 @@ const BankingStatusCard: React.FC<BankingStatusCardProps> = ({
               </Text>
             </View>
           </View>
-        )}
+          );
+        })()}
       </View>
 
       {/* Progress Indicator */}
@@ -165,10 +216,14 @@ const BankingStatusCard: React.FC<BankingStatusCardProps> = ({
               Banking Progress
             </Text>
             <Text style={[styles.progressDetail, { color: theme.colors.textSecondary }]}>
-              {bankingPlan.remainingDaysCount > 0 
-                ? `${bankingPlan.totalBanked - (bankingPlan.remainingDaysCount * bankingPlan.dailyReduction)} calories saved so far`
-                : `All ${bankingPlan.totalBanked} calories saved!`
-              }
+              {(() => {
+                const dynamicRemainingDays = getDynamicRemainingDays();
+                const caloriesSavedSoFar = getCaloriesSavedSoFar();
+                
+                return dynamicRemainingDays > 0 
+                  ? `${caloriesSavedSoFar} calories saved so far`
+                  : `All ${bankingPlan.totalBanked} calories saved!`;
+              })()}
             </Text>
           </View>
           
