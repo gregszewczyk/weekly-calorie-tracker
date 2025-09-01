@@ -1076,6 +1076,13 @@ export const useCalorieStore = create<CalorieStore>()(
               currentWeekGoal: updatedGoal,
               weeklyData: freshWeeklyData
             }));
+            
+            // Lock today's daily target AFTER weekly reset is complete
+            const todayDate = format(new Date(), 'yyyy-MM-dd');
+            if (get().getLockedDailyTarget(todayDate) === null) {
+              console.log(`🔒 [CalorieStore] Locking today's target after weekly reset`);
+              get().lockDailyTarget(todayDate);
+            }
           }
         }
       },
@@ -1133,6 +1140,13 @@ export const useCalorieStore = create<CalorieStore>()(
           currentWeekGoal: updatedGoal,
           weeklyData: freshWeeklyData
         }));
+        
+        // Lock today's daily target AFTER weekly reset is complete
+        const todayDate = format(new Date(), 'yyyy-MM-dd');
+        if (get().getLockedDailyTarget(todayDate) === null) {
+          console.log(`🔒 [CalorieStore] Locking today's target after force weekly reset`);
+          get().lockDailyTarget(todayDate);
+        }
 
         console.log('✅ [CalorieStore] Force weekly reset completed');
       },
@@ -1421,13 +1435,13 @@ export const useCalorieStore = create<CalorieStore>()(
         const totalBurned = previousWeekData.reduce((sum, day) => sum + day.burned, 0);
         const netCaloriesUsed = totalConsumed - totalBurned;
         
-        // Calculate the balance (positive = surplus/debt, negative = unused calories)
-        const balance = netCaloriesUsed - previousWeekGoal.currentWeekAllowance;
+        // Calculate the balance (negative = debt to subtract, positive = surplus to add)
+        const balance = previousWeekGoal.currentWeekAllowance - netCaloriesUsed;
         
         console.log(`   Total consumed: ${totalConsumed}, total burned: ${totalBurned}`);
         console.log(`   Net calories used: ${netCaloriesUsed}`);
         console.log(`   Week allowance: ${previousWeekGoal.currentWeekAllowance}`);
-        console.log(`   Balance to carry over: ${balance} (positive = debt, negative = surplus)`);
+        console.log(`   Balance to carry over: ${balance} (positive = surplus to add, negative = debt to subtract)`);
         
         return balance;
       },
@@ -2439,6 +2453,11 @@ export const useCalorieStore = create<CalorieStore>()(
             setTimeout(() => {
               try {
                 const store = useCalorieStore.getState();
+                
+                // Run weekly reset logic BEFORE setting isFullyReady
+                console.log('🚀 [CalorieStore] Running weekly reset check before UI renders...');
+                store.initializeWeek();
+                
                 store.setHasHydrated(true); // Keep for backwards compatibility
                 store.setIsFullyReady(true); // NEW: Our reliable flag
                 console.log('🚀 [CalorieStore] Rehydration fully complete - app ready to render');

@@ -142,16 +142,9 @@ const WeeklyBankingScreen: React.FC = () => {
     // Update banking plan status (check if target date passed)
     updateBankingPlanStatus();
     
-    // Handle daily target locking (moved from getTodaysData to prevent setState-in-render)
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const todayData = getTodaysData();
-    if (todayData && getLockedDailyTarget(today) === null) {
-      lockDailyTarget(today);
-    }
-    
     const status = getCalorieBankStatus();
     setBankStatus(status);
-  }, [getCalorieBankStatus, isFullyReady, getTodaysData, getLockedDailyTarget, lockDailyTarget, updateBankingPlanStatus]);
+  }, [getCalorieBankStatus, isFullyReady, updateBankingPlanStatus]);
 
   const onRefresh = async () => {
     setIsRefreshing(true);
@@ -187,6 +180,18 @@ const WeeklyBankingScreen: React.FC = () => {
       updateBankStatus();
     }
   }, [isFullyReady, updateBankStatus]);
+
+  // Lock today's daily target AFTER rehydration is complete (ensures weekly reset happened first)
+  useEffect(() => {
+    if (isFullyReady) {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const todayData = getTodaysData();
+      if (todayData && getLockedDailyTarget(today) === null) {
+        console.log(`🔒 [WeeklyBanking] Locking today's target after rehydration`);
+        lockDailyTarget(today);
+      }
+    }
+  }, [isFullyReady, getTodaysData, getLockedDailyTarget, lockDailyTarget]);
 
   // Refresh data when screen comes into focus (e.g., navigating back from another screen)
   useFocusEffect(

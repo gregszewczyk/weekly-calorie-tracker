@@ -28,8 +28,7 @@ function AppContent() {
 
     console.log('🚀 [App] Rehydration fully complete, initializing app...');
     
-    // Initialize the current week when app starts
-    initializeWeek();
+    // Note: initializeWeek() now called during rehydration to ensure proper timing
     
     // Initialize backup service
     BackupService.initialize();
