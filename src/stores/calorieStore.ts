@@ -374,7 +374,8 @@ export const useCalorieStore = create<CalorieStore>()(
         
         // For future days calculation, subtract today's target from total remaining
         const remainingForFutureDays = totalRemaining - todayTarget;
-        const dailyAverageForFuture = daysLeftExcludingToday > 0 ? remainingForFutureDays / daysLeftExcludingToday : 0;
+        // But for daily average, use the full remaining amount divided by future days
+        const dailyAverageForFuture = daysLeftExcludingToday > 0 ? totalRemaining / daysLeftExcludingToday : 0;
         
         // Simple projected outcome without complex redistribution logic
         const projectedOutcome: 'on-track' | 'over-budget' | 'under-budget' = 
