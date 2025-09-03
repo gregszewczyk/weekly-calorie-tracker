@@ -48,6 +48,7 @@ const WeeklyBankingScreen: React.FC = () => {
     isBankingAvailable,
     updateBankingPlanStatus,
     forceWeeklyReset,
+    syncCurrentWeekGarminData, // NEW: For auto-refresh after Garmin connection
     weeklyData, // Subscribe to weeklyData changes to trigger re-render
     isFullyReady // NEW: Wait for complete rehydration
   } = useCalorieStore();
@@ -94,9 +95,23 @@ const WeeklyBankingScreen: React.FC = () => {
         console.log('🔄 [WeeklyBanking] Auto-detected connection - refreshing health device status...');
         hasDetectedConnection = true;
         
+        // Refresh health device status
         healthDeviceRef.current?.forceRefresh().catch((error: any) => {
           console.log('⚠️ [WeeklyBanking] Auto-refresh failed:', error.message);
         });
+
+        // NEW: Auto-refresh Garmin data and update banking status after connection
+        setTimeout(async () => {
+          try {
+            console.log('🔄 [WeeklyBanking] Auto-syncing Garmin data after connection...');
+            await syncCurrentWeekGarminData();
+            console.log('✅ [WeeklyBanking] Garmin data synced, updating bank status...');
+            updateBankStatus();
+            console.log('✅ [WeeklyBanking] Weekly calorie bank automatically refreshed with latest Garmin data');
+          } catch (error: any) {
+            console.log('⚠️ [WeeklyBanking] Failed to auto-sync Garmin data:', error.message);
+          }
+        }, 1000); // Small delay to let health device refresh complete first
       } else {
         console.log('🔍 [WeeklyBanking] Checking for connections... none found yet');
       }
