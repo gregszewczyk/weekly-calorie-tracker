@@ -441,6 +441,17 @@ export class GarminProxyService {
         } catch (error: any) {
           console.log('⚠️ [ProxyService] Failed to refresh HealthDeviceManager:', error.message);
         }
+
+        // Refresh weekly calorie data after successful reconnection
+        try {
+          const { useCalorieStore } = await import('../stores/calorieStore');
+          const { syncCurrentWeekGarminData } = useCalorieStore.getState();
+          console.log('🔄 [ProxyService] Refreshing weekly calorie data after reconnection...');
+          await syncCurrentWeekGarminData();
+          console.log('✅ [ProxyService] Weekly calorie data refreshed - UI will automatically update');
+        } catch (error: any) {
+          console.log('⚠️ [ProxyService] Failed to refresh weekly calorie data after auto-login:', error.message);
+        }
       } else {
         console.log('❌ [ProxyService] Auto-login failed, clearing stored credentials');
         await GarminCredentialManager.clearStoredCredentials();
