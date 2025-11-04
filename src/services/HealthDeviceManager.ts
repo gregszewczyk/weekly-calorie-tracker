@@ -7,6 +7,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { 
   HealthPlatform, 
   HealthDeviceConnection, 
@@ -18,15 +19,67 @@ import {
 } from '../types/HealthDeviceTypes';
 import { garminProxyService } from './GarminProxyService';
 
+// Mock services for development and testing
+import MockHealthKit from '../mocks/MockHealthKit';
+import MockSamsungHealth from '../mocks/MockSamsungHealth';
+
 export class HealthDeviceManager {
   private static readonly STORAGE_KEY = '@health_device_connections';
   private connections: Map<HealthPlatform, HealthDeviceConnection> = new Map();
+  private useMockServices: boolean;
 
   constructor() {
     console.log('🏥 [HealthDeviceManager] Initializing HealthDeviceManager...');
+    
+    // Detect if we should use mock services
+    this.useMockServices = this.shouldUseMockServices();
+    if (this.useMockServices) {
+      console.log('🧪 [HealthDeviceManager] Mock services enabled for development/testing');
+      this.initializeMockServices();
+    }
+    
     this.loadStoredConnections();
     console.log('🏥 [HealthDeviceManager] Starting session validation...');
     this.validateExistingSessions();
+  }
+
+  /**
+   * Determine if mock services should be used
+   */
+  private shouldUseMockServices(): boolean {
+    // Check if explicitly enabled via environment or config
+    if (__DEV__) {
+      // In development mode, use mocks when not on the target platform
+      return true; // Always use mocks in development for comprehensive testing
+    }
+    
+    // Check for explicit mock flag (could be set by tests)
+    if (typeof global !== 'undefined' && (global as any).__USE_MOCK_HEALTH_SERVICES) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Initialize mock services with realistic settings
+   */
+  private initializeMockServices(): void {
+    console.log('🔧 [HealthDeviceManager] Initializing mock services...');
+    
+    // Configure MockHealthKit for realistic behavior
+    MockHealthKit.enableRealisticMode();
+    
+    // Configure MockSamsungHealth for realistic behavior
+    MockSamsungHealth.setConfig({
+      simulateDelay: true,
+      delayMs: 800,
+      successRate: 0.85,
+      mockData: true,
+      simulateNetworkIssues: false,
+    });
+    
+    console.log('✅ [HealthDeviceManager] Mock services initialized');
   }
 
   /**
@@ -361,7 +414,62 @@ export class HealthDeviceManager {
   }
 
   private async connectSamsung(request: ConnectionRequest): Promise<ConnectionResult> {
-    // Samsung Health connection will be implemented
+    if (this.useMockServices) {
+      console.log('🧪 [HealthDeviceManager] Using mock Samsung Health service');
+      
+      try {
+        const isAvailable = await MockSamsungHealth.isAvailable();
+        if (!isAvailable) {
+          return {
+            success: false,
+            error: 'Samsung Health not available on this platform'
+          };
+        }
+
+        const initialized = await MockSamsungHealth.initialize();
+        if (!initialized) {
+          return {
+            success: false,
+            error: 'Failed to initialize Samsung Health SDK'
+          };
+        }
+
+        const scopes = ['read:health:activity', 'read:health:sleep', 'read:health:steps'];
+        const authenticated = await MockSamsungHealth.authenticate(scopes);
+        
+        if (authenticated) {
+          const userProfile = await MockSamsungHealth.getUserProfile();
+          
+          const connection: HealthDeviceConnection = {
+            platform: 'samsung',
+            status: 'connected',
+            deviceName: 'Samsung Health (Mock)',
+            deviceModel: 'Mock Samsung Device',
+            connectedAt: new Date(),
+            lastSync: new Date(),
+            userId: userProfile.userId
+          };
+
+          return {
+            success: true,
+            connection,
+            message: 'Successfully connected to Samsung Health (Mock)'
+          };
+        } else {
+          return {
+            success: false,
+            error: 'Samsung Health authentication failed'
+          };
+        }
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.message || 'Samsung Health connection failed'
+        };
+      }
+    }
+    
+    // Real Samsung Health connection will be implemented
     return {
       success: false,
       error: 'Samsung Health integration coming soon'
@@ -369,7 +477,56 @@ export class HealthDeviceManager {
   }
 
   private async connectApple(request: ConnectionRequest): Promise<ConnectionResult> {
-    // Apple HealthKit connection will be implemented
+    if (this.useMockServices) {
+      console.log('🧪 [HealthDeviceManager] Using mock Apple HealthKit service');
+      
+      try {
+        const isAvailable = await MockHealthKit.isAvailable();
+        if (!isAvailable) {
+          return {
+            success: false,
+            error: 'Apple HealthKit not available on this platform'
+          };
+        }
+
+        const permissions = {
+          read: ['HKQuantityTypeIdentifierStepCount', 'HKWorkoutTypeIdentifier', 'HKQuantityTypeIdentifierActiveEnergyBurned'],
+          write: ['HKQuantityTypeIdentifierDietaryEnergyConsumed']
+        };
+        
+        const initialized = await MockHealthKit.initHealthKit(permissions);
+        
+        if (initialized) {
+          const connection: HealthDeviceConnection = {
+            platform: 'apple',
+            status: 'connected',
+            deviceName: 'Apple HealthKit (Mock)',
+            deviceModel: 'Mock iPhone/Apple Watch',
+            connectedAt: new Date(),
+            lastSync: new Date(),
+            userId: 'mock_apple_user'
+          };
+
+          return {
+            success: true,
+            connection,
+            message: 'Successfully connected to Apple HealthKit (Mock)'
+          };
+        } else {
+          return {
+            success: false,
+            error: 'Apple HealthKit permissions denied or initialization failed'
+          };
+        }
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.message || 'Apple HealthKit connection failed'
+        };
+      }
+    }
+    
+    // Real Apple HealthKit connection will be implemented
     return {
       success: false,
       error: 'Apple HealthKit integration coming soon'
@@ -445,12 +602,66 @@ export class HealthDeviceManager {
   }
 
   private async getSamsungActivities(days: number): Promise<UniversalActivity[]> {
-    // Samsung Health activities will be implemented
+    if (this.useMockServices) {
+      try {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - days);
+        
+        const exercises = await MockSamsungHealth.getExercises(startDate, endDate);
+        
+        return exercises.map(exercise => ({
+          id: `samsung_${exercise.exerciseType}_${exercise.startDate.getTime()}`,
+          platform: 'samsung' as HealthPlatform,
+          activityType: exercise.exerciseType,
+          displayName: exercise.exerciseName,
+          startTime: exercise.startDate,
+          duration: Math.round(exercise.duration / 60), // Convert seconds to minutes
+          calories: exercise.calories,
+          distance: exercise.distance,
+          averageHeartRate: exercise.avgHeartRate,
+          maxHeartRate: exercise.avgHeartRate ? exercise.avgHeartRate + 20 : undefined,
+          syncedAt: new Date()
+        }));
+      } catch (error) {
+        console.error('❌ [HealthDeviceManager] Failed to get Samsung activities (mock):', error);
+        return [];
+      }
+    }
+    
+    // Real Samsung Health activities will be implemented
     return [];
   }
 
   private async getAppleActivities(days: number): Promise<UniversalActivity[]> {
-    // Apple HealthKit activities will be implemented
+    if (this.useMockServices) {
+      try {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - days);
+        
+        const workouts = await MockHealthKit.getWorkouts({ startDate, endDate });
+        
+        return workouts.map(workout => ({
+          id: `apple_${workout.activityType}_${workout.startDate.getTime()}`,
+          platform: 'apple' as HealthPlatform,
+          activityType: workout.workoutActivityType || workout.activityType,
+          displayName: workout.activityType,
+          startTime: workout.startDate,
+          duration: Math.round(workout.duration / 60), // Convert seconds to minutes
+          calories: workout.totalEnergyBurned,
+          distance: workout.totalDistance,
+          averageHeartRate: workout.averageHeartRate,
+          maxHeartRate: workout.maximumHeartRate,
+          syncedAt: new Date()
+        }));
+      } catch (error) {
+        console.error('❌ [HealthDeviceManager] Failed to get Apple activities (mock):', error);
+        return [];
+      }
+    }
+    
+    // Real Apple HealthKit activities will be implemented
     return [];
   }
 }

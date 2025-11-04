@@ -12,6 +12,9 @@ interface MockHealthKitConfig {
   delayMs: number;
   successRate: number;
   mockData: boolean;
+  simulatePermissionDenials: boolean;
+  simulateDataGaps: boolean;
+  simulateRealisticPatterns: boolean;
 }
 
 class MockHealthKit {
@@ -20,6 +23,9 @@ class MockHealthKit {
     delayMs: 500,
     successRate: 0.8, // 80% success rate for permissions
     mockData: true,
+    simulatePermissionDenials: true,
+    simulateDataGaps: true,
+    simulateRealisticPatterns: true,
   };
 
   private isInitialized = false;
@@ -80,14 +86,38 @@ class MockHealthKit {
     await this.simulateDelay(100); // Shorter delay for individual queries
     
     let status: number;
-    if (this.grantedPermissions.has(dataType)) {
-      status = 1; // authorized
-    } else if (Math.random() < 0.1) {
-      status = 3; // restricted
-    } else if (Math.random() < 0.3) {
-      status = 2; // denied
+    
+    if (this.config.simulatePermissionDenials) {
+      // Simulate realistic permission patterns
+      if (this.grantedPermissions.has(dataType)) {
+        status = 1; // authorized
+      } else {
+        // Different denial patterns for different data types
+        if (dataType.includes('Heart')) {
+          // Heart rate data often denied
+          status = Math.random() < 0.4 ? 2 : 0; // 40% denied, 60% not determined
+        } else if (dataType.includes('Workout')) {
+          // Workout data usually allowed
+          status = Math.random() < 0.9 ? 1 : 0; // 90% authorized, 10% not determined
+        } else if (dataType.includes('Step')) {
+          // Step data usually allowed
+          status = Math.random() < 0.85 ? 1 : 0; // 85% authorized, 15% not determined
+        } else {
+          // Other data types
+          status = Math.random() < 0.7 ? 1 : (Math.random() < 0.5 ? 2 : 0);
+        }
+      }
     } else {
-      status = 0; // not determined
+      // Original logic
+      if (this.grantedPermissions.has(dataType)) {
+        status = 1; // authorized
+      } else if (Math.random() < 0.1) {
+        status = 3; // restricted
+      } else if (Math.random() < 0.3) {
+        status = 2; // denied
+      } else {
+        status = 0; // not determined
+      }
     }
 
     console.log(`🔍 [MockHealthKit] Authorization status for ${dataType}: ${this.getStatusName(status)}`);
@@ -173,10 +203,40 @@ class MockHealthKit {
     const endDate = new Date(options.endDate || Date.now());
     
     for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+      // Simulate data gaps (some days missing)
+      if (this.config.simulateDataGaps && Math.random() < 0.1) {
+        continue; // Skip this day
+      }
+
+      let stepCount: number;
+      
+      if (this.config.simulateRealisticPatterns) {
+        const dayOfWeek = date.getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        const isFriday = dayOfWeek === 5;
+        
+        // Realistic step patterns
+        if (isWeekend) {
+          stepCount = Math.floor(Math.random() * 8000) + 4000; // 4k-12k weekend
+        } else if (isFriday) {
+          stepCount = Math.floor(Math.random() * 10000) + 6000; // 6k-16k Friday
+        } else {
+          stepCount = Math.floor(Math.random() * 12000) + 7000; // 7k-19k weekday
+        }
+        
+        // Add some personal variation (simulate individual patterns)
+        const personalFactor = 0.8 + Math.random() * 0.4; // 0.8-1.2 multiplier
+        stepCount = Math.floor(stepCount * personalFactor);
+      } else {
+        stepCount = Math.floor(Math.random() * 15000) + 3000; // Original logic
+      }
+
       steps.push({
-        value: Math.floor(Math.random() * 15000) + 3000, // 3,000-18,000 steps
+        value: stepCount,
         startDate: new Date(date),
         endDate: new Date(date.getTime() + 24 * 60 * 60 * 1000),
+        source: 'iPhone', // Add source information
+        device: 'iPhone 14 Pro',
       });
     }
     
@@ -185,23 +245,93 @@ class MockHealthKit {
 
   private generateMockWorkouts(options: any): any[] {
     const workouts = [];
-    const activities = ['Running', 'Cycling', 'Swimming', 'Yoga', 'Strength Training'];
+    const startDate = new Date(options.startDate || Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const endDate = new Date(options.endDate || Date.now());
     
-    for (let i = 0; i < 5; i++) {
-      const startDate = new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000);
-      const duration = Math.random() * 60 + 20; // 20-80 minutes
+    const activities = [
+      { type: 'Running', avgDuration: 35, avgCalories: 400, hasDistance: true },
+      { type: 'Cycling', avgDuration: 50, avgCalories: 350, hasDistance: true },
+      { type: 'Swimming', avgDuration: 30, avgCalories: 450, hasDistance: false },
+      { type: 'Yoga', avgDuration: 60, avgCalories: 200, hasDistance: false },
+      { type: 'Strength Training', avgDuration: 45, avgCalories: 300, hasDistance: false },
+      { type: 'Walking', avgDuration: 25, avgCalories: 150, hasDistance: true },
+      { type: 'HIIT Workout', avgDuration: 20, avgCalories: 350, hasDistance: false },
+    ];
+    
+    const dayCount = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (this.config.simulateRealisticPatterns) {
+      // Realistic workout frequency (3-4 times per week)
+      const workoutDays = Math.floor(dayCount * 0.45);
       
-      workouts.push({
-        activityType: activities[Math.floor(Math.random() * activities.length)],
-        startDate,
-        endDate: new Date(startDate.getTime() + duration * 60 * 1000),
-        duration: duration * 60, // seconds
-        totalEnergyBurned: Math.floor(Math.random() * 500) + 200, // 200-700 calories
-        totalDistance: Math.random() * 10000, // meters
-      });
+      for (let i = 0; i < workoutDays; i++) {
+        // Skip some workouts to simulate real behavior
+        if (this.config.simulateDataGaps && Math.random() < 0.15) {
+          continue;
+        }
+
+        const randomDate = new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime()));
+        const activity = activities[Math.floor(Math.random() * activities.length)];
+        
+        // More realistic duration variations
+        const durationVariation = 0.7 + Math.random() * 0.6; // 0.7-1.3 multiplier
+        const duration = Math.floor(activity.avgDuration * durationVariation);
+        
+        // Calories correlate with duration and activity type
+        const calorieVariation = 0.8 + Math.random() * 0.4; // 0.8-1.2 multiplier
+        const calories = Math.floor(activity.avgCalories * calorieVariation * (duration / activity.avgDuration));
+        
+        // Set realistic workout times (morning or evening peaks)
+        const hour = Math.random() < 0.6 ? 
+          (6 + Math.random() * 3) : // Morning: 6-9 AM
+          (17 + Math.random() * 4); // Evening: 5-9 PM
+        randomDate.setHours(Math.floor(hour), Math.random() * 60);
+        
+        const workout: any = {
+          activityType: activity.type,
+          workoutActivityType: activity.type,
+          startDate: randomDate,
+          endDate: new Date(randomDate.getTime() + duration * 60 * 1000),
+          duration: duration * 60, // seconds
+          totalEnergyBurned: calories,
+          source: 'Health',
+          device: 'Apple Watch Series 8',
+        };
+
+        // Add distance for activities that have it
+        if (activity.hasDistance) {
+          const speed = activity.type === 'Running' ? 10 : 15; // km/h average
+          workout.totalDistance = (duration / 60) * speed * 1000; // meters
+        }
+
+        // Add heart rate data
+        if (Math.random() < 0.8) { // 80% of workouts have HR data
+          const baseHR = activity.type === 'Yoga' ? 100 : 150;
+          workout.averageHeartRate = baseHR + Math.random() * 30;
+          workout.maximumHeartRate = workout.averageHeartRate + 20 + Math.random() * 25;
+        }
+
+        workouts.push(workout);
+      }
+    } else {
+      // Original simpler logic
+      for (let i = 0; i < 5; i++) {
+        const randomDate = new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime()));
+        const activity = activities[Math.floor(Math.random() * activities.length)];
+        const duration = Math.random() * 60 + 20; // 20-80 minutes
+        
+        workouts.push({
+          activityType: activity.type,
+          startDate: randomDate,
+          endDate: new Date(randomDate.getTime() + duration * 60 * 1000),
+          duration: duration * 60, // seconds
+          totalEnergyBurned: Math.floor(Math.random() * 500) + 200, // 200-700 calories
+          totalDistance: Math.random() * 10000, // meters
+        });
+      }
     }
     
-    return workouts;
+    return workouts.sort((a, b) => b.startDate.getTime() - a.startDate.getTime());
   }
 
   private generateMockSamples(dataType: string, options: any): any[] {
@@ -256,6 +386,54 @@ class MockHealthKit {
   denyAllPermissions(): void {
     this.grantedPermissions.clear();
     console.log('❌ [MockHealthKit] Denied all permissions');
+  }
+
+  // Enhanced testing methods
+  simulatePermissionDenial(dataType: string): void {
+    this.grantedPermissions.delete(dataType);
+    console.log(`❌ [MockHealthKit] Simulated permission denial for ${dataType}`);
+  }
+
+  simulateDataUnavailable(): void {
+    this.setConfig({ mockData: false });
+    console.log('📵 [MockHealthKit] Simulated data unavailable');
+  }
+
+  simulateNetworkError(): void {
+    this.setConfig({ successRate: 0, simulateDelay: true, delayMs: 5000 });
+    console.log('🌐 [MockHealthKit] Simulating network error conditions');
+  }
+
+  enableRealisticMode(): void {
+    this.setConfig({
+      simulatePermissionDenials: true,
+      simulateDataGaps: true,
+      simulateRealisticPatterns: true,
+      successRate: 0.85,
+      delayMs: 600,
+    });
+    console.log('🎯 [MockHealthKit] Enabled realistic simulation mode');
+  }
+
+  enablePerfectMode(): void {
+    this.setConfig({
+      simulatePermissionDenials: false,
+      simulateDataGaps: false,
+      simulateRealisticPatterns: false,
+      successRate: 1.0,
+      delayMs: 100,
+    });
+    console.log('✨ [MockHealthKit] Enabled perfect simulation mode (for demos)');
+  }
+
+  getDetailedStatus(): any {
+    return {
+      isInitialized: this.isInitialized,
+      grantedPermissions: Array.from(this.grantedPermissions),
+      config: this.config,
+      platform: Platform.OS,
+      mockVersion: '2.0.0',
+    };
   }
 }
 
