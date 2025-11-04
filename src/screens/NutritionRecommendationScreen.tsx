@@ -262,12 +262,26 @@ const NutritionRecommendationScreen: React.FC = () => {
         {
           text: 'Save',
           onPress: () => {
-            // Update goal configuration with nutrition data
+            // Calculate baseline exercise calories from TDEE
+            const bmr = perplexityService.calculateBMR(athleteProfile!.physicalStats);
+            const baselineExerciseCalories = selectedTDEE ? selectedTDEE - bmr : 0;
+
+            // Update goal configuration with nutrition data and baseline
             const enhancedGoalConfig = {
               ...goalConfiguration,
               nutritionRecommendation: selectedRecommendation,
               selectedLevel,
               lastCalculated: new Date().toISOString(),
+              enhancedDataUsed: {
+                deviceType: 'garmin' as const, // Will be set properly when device integration is fully implemented
+                confidenceScore: tdeeMethod === 'enhanced' ? 85 : 60,
+                dataQuality: tdeeMethod === 'enhanced' ? 80 : 50,
+                daysCovered: tdeeMethod === 'enhanced' ? 30 : 0,
+                enhancedTDEE: selectedTDEE || selectedRecommendation.dailyCalories,
+                standardTDEE: selectedTDEE || selectedRecommendation.dailyCalories,
+                baselineExerciseCalories: Math.round(baselineExerciseCalories),
+                usedAt: new Date().toISOString(),
+              },
             };
 
             // Create weekly goal from recommendation using AI's suggested daily calories

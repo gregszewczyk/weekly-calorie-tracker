@@ -33,6 +33,28 @@ import { garminProxyService } from '../services/GarminProxyService';
 // import { SleepEnhancedHistoricalAnalyzer } from '../services/SleepEnhancedHistoricalAnalyzer';
 import { startOfWeek, format, addDays } from 'date-fns';
 
+/**
+ * Calculate excess burned calories with timing awareness
+ * - Current day: Bonuses only (no penalty until day ends)
+ * - Past days: Full calculation (can be negative)
+ */
+const calculateExcessBurned = (
+  burned: number,
+  baseline: number,
+  date: string
+): number => {
+  const isToday = date === format(new Date(), 'yyyy-MM-dd');
+  const excess = burned - baseline;
+
+  if (isToday) {
+    // Current day: only bonuses, no penalties (activity might still happen)
+    return Math.max(0, excess);
+  } else {
+    // Past days: full calculation (can be negative)
+    return excess;
+  }
+};
+
 interface CalorieStore {
   // State
   currentWeekGoal: WeeklyCalorieGoal | null;
@@ -215,7 +237,11 @@ export const useCalorieStore = create<CalorieStore>()(
         // Calculate weekly progress directly (like getCurrentWeekProgress but without calling it)
         const totalConsumed = weeklyData.reduce((sum, day) => sum + day.consumed, 0);
         const totalBurned = weeklyData.reduce((sum, day) => sum + day.burned, 0);
-        const remainingCalories = currentWeekGoal.totalTarget - totalConsumed + totalBurned;
+        const baseline = goalConfiguration?.enhancedDataUsed?.baselineExerciseCalories || 0;
+        const totalExcessBurned = weeklyData.reduce((sum, day) => {
+          return sum + calculateExcessBurned(day.burned, baseline, day.date);
+        }, 0);
+        const remainingCalories = currentWeekGoal.totalTarget - totalConsumed + totalExcessBurned;
         
         // Calculate current day and remaining days
         const today = new Date();
@@ -240,7 +266,7 @@ export const useCalorieStore = create<CalorieStore>()(
         // Simple adjustment reason based on pace
         const daysElapsed = currentDayIndex;
         const expectedConsumedByNow = (currentWeekGoal.weeklyAllowance / 7) * daysElapsed;
-        const actualNetConsumed = totalConsumed - totalBurned;
+        const actualNetConsumed = totalConsumed - totalExcessBurned;
         const deviation = actualNetConsumed - expectedConsumedByNow;
         
         let adjustmentReason: 'on-track' | 'over-budget' | 'under-budget';
@@ -355,7 +381,11 @@ export const useCalorieStore = create<CalorieStore>()(
         // Calculate basic progress WITHOUT calling other computed methods
         const totalConsumed = weeklyData.reduce((sum, day) => sum + day.consumed, 0);
         const totalBurned = weeklyData.reduce((sum, day) => sum + day.burned, 0);
-        const totalUsed = totalConsumed - totalBurned;
+        const baseline = goalConfiguration.enhancedDataUsed?.baselineExerciseCalories || 0;
+        const totalExcessBurned = weeklyData.reduce((sum, day) => {
+          return sum + calculateExcessBurned(day.burned, baseline, day.date);
+        }, 0);
+        const totalUsed = totalConsumed - totalExcessBurned;
         
         // Calculate days left in week
         const today = new Date();
@@ -581,10 +611,14 @@ export const useCalorieStore = create<CalorieStore>()(
         
         // Create intelligent weekly goal that accounts for existing consumption
         let adjustedGoal = goal;
-        
+
         if (totalConsumed > 0 || totalBurned > 0) {
           // User has existing data this week - adjust the goal intelligently
-          const netConsumed = totalConsumed - totalBurned;
+          const baseline = config?.enhancedDataUsed?.baselineExerciseCalories || 0;
+          const totalExcessBurned = weeklyData.reduce((sum, day) => {
+            return sum + calculateExcessBurned(day.burned, baseline, day.date);
+          }, 0);
+          const netConsumed = totalConsumed - totalExcessBurned;
           const remainingBudget = goal.totalTarget - netConsumed;
           
           console.log('🧠 [CalorieStore] Intelligent goal transition:', {
@@ -1272,7 +1306,11 @@ export const useCalorieStore = create<CalorieStore>()(
             consumed: todayData.consumed,
             burned: todayData.burned,
             target: correctDailyTarget,
-            remaining: correctDailyTarget - todayData.consumed + todayData.burned
+            remaining: (() => {
+              const baseline = goalConfig?.enhancedDataUsed?.baselineExerciseCalories || 0;
+              const excessBurned = calculateExcessBurned(todayData.burned, baseline, today);
+              return correctDailyTarget - todayData.consumed + excessBurned;
+            })()
           },
           macros: {
             protein: { current: macroTotals.protein, target: macroTargets.protein },
@@ -1434,7 +1472,11 @@ export const useCalorieStore = create<CalorieStore>()(
         // Calculate total net calories used in previous week
         const totalConsumed = previousWeekData.reduce((sum, day) => sum + day.consumed, 0);
         const totalBurned = previousWeekData.reduce((sum, day) => sum + day.burned, 0);
-        const netCaloriesUsed = totalConsumed - totalBurned;
+        const baseline = goalConfiguration?.enhancedDataUsed?.baselineExerciseCalories || 0;
+        const totalExcessBurned = previousWeekData.reduce((sum, day) => {
+          return sum + calculateExcessBurned(day.burned, baseline, day.date);
+        }, 0);
+        const netCaloriesUsed = totalConsumed - totalExcessBurned;
         
         // Calculate the balance (negative = debt to subtract, positive = surplus to add)
         const balance = previousWeekGoal.currentWeekAllowance - netCaloriesUsed;
@@ -2028,7 +2070,11 @@ export const useCalorieStore = create<CalorieStore>()(
         // Day 2+: Dynamic calculation based on remaining bank
         const totalConsumed = weeklyData.reduce((sum, day) => sum + day.consumed, 0);
         const totalBurned = weeklyData.reduce((sum, day) => sum + day.burned, 0);
-        const remainingCalories = currentWeekGoal.currentWeekAllowance - totalConsumed + totalBurned;
+        const baseline = goalConfiguration?.enhancedDataUsed?.baselineExerciseCalories || 0;
+        const totalExcessBurned = weeklyData.reduce((sum, day) => {
+          return sum + calculateExcessBurned(day.burned, baseline, day.date);
+        }, 0);
+        const remainingCalories = currentWeekGoal.currentWeekAllowance - totalConsumed + totalExcessBurned;
         
         // Calculate remaining days from target date
         const today = new Date();

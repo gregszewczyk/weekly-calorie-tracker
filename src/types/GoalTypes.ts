@@ -168,6 +168,7 @@ export interface GoalConfiguration {
     daysCovered: number; // days of data used
     enhancedTDEE: number; // calculated TDEE from real data
     standardTDEE: number; // estimated TDEE for comparison
+    baselineExerciseCalories: number; // daily exercise calories assumed in TDEE calculation
     usedAt: string; // ISO timestamp when data was used
   };
 }

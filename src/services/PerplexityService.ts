@@ -349,7 +349,8 @@ User Profile:
     if (!selectedTDEE) {
       // Fallback calculation
       const bmr = this.calculateBMR(athleteProfile.physicalStats);
-      selectedTDEE = Math.round(this.calculateTDEE(bmr, athleteProfile.trainingProfile));
+      const { tdee } = this.calculateTDEE(bmr, athleteProfile.trainingProfile);
+      selectedTDEE = tdee;
     }
 
     // Get target weight - for basic users it's in performance goals or use current weight
@@ -501,7 +502,8 @@ Current Goal:
       } else {
         // Calculate Standard TDEE from athlete profile - should always be possible
         const bmr = this.calculateBMR(athleteProfile.physicalStats);
-        selectedTDEEValue = Math.round(this.calculateTDEE(bmr, athleteProfile.trainingProfile));
+        const { tdee } = this.calculateTDEE(bmr, athleteProfile.trainingProfile);
+        selectedTDEEValue = tdee;
         console.log(`🔢 [PerplexityService] Calculated Standard TDEE as fallback: ${selectedTDEEValue} kcal/day`);
       }
     }
@@ -687,7 +689,8 @@ Current Goal:
       } else {
         // Calculate Standard TDEE from athlete profile - should always be possible
         const bmr = this.calculateBMR(athleteProfile.physicalStats);
-        selectedTDEEValue = Math.round(this.calculateTDEE(bmr, athleteProfile.trainingProfile));
+        const { tdee } = this.calculateTDEE(bmr, athleteProfile.trainingProfile);
+        selectedTDEEValue = tdee;
         console.log(`🔢 [PerplexityService] Calculated Standard TDEE as fallback: ${selectedTDEEValue} kcal/day`);
       }
     }
@@ -1266,8 +1269,8 @@ ADDITIONAL CONTEXT:
     } else {
       // Athletes or fallback: calculate from profile
       const bmr = this.calculateBMR(athleteProfile.physicalStats);
-      const tdee = this.calculateTDEE(bmr, athleteProfile.trainingProfile);
-      baseCalories = Math.round(tdee);
+      const { tdee } = this.calculateTDEE(bmr, athleteProfile.trainingProfile);
+      baseCalories = tdee;
       console.log('🔢 [PerplexityService] Calculated TDEE for athlete:', baseCalories);
     }
     
@@ -1525,7 +1528,7 @@ ADDITIONAL CONTEXT:
     };
   }
 
-  private calculateBMR(physicalStats: AthleteProfile['physicalStats']): number {
+  public calculateBMR(physicalStats: AthleteProfile['physicalStats']): number {
     const { age, weight, height, gender, bodyFatPercentage } = physicalStats;
     
     // If body fat percentage is available, use Katch-McArdle formula for more accuracy
@@ -1544,22 +1547,28 @@ ADDITIONAL CONTEXT:
     }
   }
 
-  private calculateTDEE(bmr: number, trainingProfile: AthleteProfile['trainingProfile']): number {
+  private calculateTDEE(bmr: number, trainingProfile: AthleteProfile['trainingProfile']): { tdee: number; baseline: number } {
     const { weeklyTrainingHours, currentFitnessLevel } = trainingProfile;
-    
+
     // Activity factor based on training volume and intensity
     let activityFactor = 1.4; // Sedentary base
-    
+
     if (weeklyTrainingHours >= 15) activityFactor = 1.9; // Very active
     else if (weeklyTrainingHours >= 10) activityFactor = 1.7; // Very active
     else if (weeklyTrainingHours >= 6) activityFactor = 1.5; // Moderately active
     else if (weeklyTrainingHours >= 3) activityFactor = 1.4; // Lightly active
-    
+
     // Adjust for fitness level
     if (currentFitnessLevel === 'elite') activityFactor *= 1.1;
     else if (currentFitnessLevel === 'advanced') activityFactor *= 1.05;
-    
-    return bmr * activityFactor;
+
+    const tdee = bmr * activityFactor;
+    const baseline = tdee - bmr; // Exercise calories included in TDEE calculation
+
+    return {
+      tdee: Math.round(tdee),
+      baseline: Math.round(baseline)
+    };
   }
 
   private calculateTimeToGoal(weeklyDeficit: number, currentWeight?: number, targetWeight?: number): string {
@@ -1810,7 +1819,8 @@ ADDITIONAL CONTEXT:
       if (!tdee) {
         // Calculate Standard TDEE from athlete profile as fallback
         const bmr = this.calculateBMR(request.athleteProfile.physicalStats);
-        tdee = Math.round(this.calculateTDEE(bmr, request.athleteProfile.trainingProfile));
+        const { tdee: calculatedTdee } = this.calculateTDEE(bmr, request.athleteProfile.trainingProfile);
+        tdee = calculatedTdee;
       }
       console.log('🔢 [PerplexityService] Using TDEE for deficit calculation:', tdee);
       
